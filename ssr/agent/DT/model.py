@@ -249,7 +249,6 @@ class SafeDecisionTransformer(nn.Module):
         return state_preds, action_preds, return_preds, return_cost_preds
 
 
-
 class SafeDecisionTransformer_Structure(nn.Module):
     def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len,
                  n_heads, drop_p, max_timestep=4096):
@@ -261,7 +260,7 @@ class SafeDecisionTransformer_Structure(nn.Module):
         self.h_dim = h_dim
 
         ### transformer blocks
-        input_seq_len = 6 * context_len
+        input_seq_len = 5 * context_len
         blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
         self.transformer = nn.Sequential(*blocks)
 
@@ -274,17 +273,18 @@ class SafeDecisionTransformer_Structure(nn.Module):
                                            nn.GELU(),
                                            nn.Linear(h_dim, h_dim)])
         
-        self.embed_img = nn.ModuleList([build_encoder_net(z_dim=h_dim, nc=1, deterministic=True) for _ in range(5)])
-        self.agg_img = nn.Sequential(*[nn.Linear(h_dim*5, h_dim), 
-                                           nn.GELU(),
-                                           nn.Linear(h_dim, h_dim)])
-        w = torch.load('checkpoint/attention_encoder_actor.pt')
-        for i in range(5):
-            self.embed_img[i].load_state_dict({k.split('.')[-2]+'.'+k.split('.')[-1]: w[k] for k in w.keys() if 'action_encoder.encoder.'+str(i) in k})
-        print('Image Checkpoint Loaded')
+        # self.embed_img = nn.ModuleList([build_encoder_net(z_dim=h_dim, nc=1, deterministic=True) for _ in range(5)])
+        # self.agg_img = nn.Sequential(*[nn.Linear(h_dim*5, h_dim), 
+        #                                    nn.GELU(),
+        #                                    nn.Linear(h_dim, h_dim)])
+        # w = torch.load('checkpoint/attention_encoder_actor.pt')
+        # for i in range(5):
+        #     self.embed_img[i].load_state_dict({k.split('.')[-2]+'.'+k.split('.')[-1]: w[k] for k in w.keys() if 'action_encoder.encoder.'+str(i) in k})
+        # print('Image Checkpoint Loaded')
 
-        for v in self.embed_img.parameters():
-            v.requires_grad = False
+        # for v in self.embed_img.parameters():
+        #     v.requires_grad = False
+        
         print('Image Encoder Freezed')
         
         self.embed_state = torch.nn.Linear(state_dim, h_dim)
@@ -319,17 +319,19 @@ class SafeDecisionTransformer_Structure(nn.Module):
         action_embeddings = self.embed_action(actions) + time_embeddings
         returns_embeddings = self.embed_rtg(returns_to_go) + time_embeddings
         returns_embeddings_cost = self.embed_ctg(returns_to_go_cost) + time_embeddings
-        state_embeddings_img_agg = torch.cat([self.embed_img[i](img[:, :, i, :, :].reshape(-1, 1, 84, 84)) for i in range(5)], dim=-1)
-        state_embeddings_img_agg = state_embeddings_img_agg.reshape(B, T, self.h_dim*5)
-        state_embeddings_img = self.agg_img(state_embeddings_img_agg) + time_embeddings
+
+        # state_embeddings_img_agg = torch.cat([self.embed_img[i](img[:, :, i, :, :].reshape(-1, 1, 84, 84)) for i in range(5)], dim=-1)
+        # state_embeddings_img_agg = state_embeddings_img_agg.reshape(B, T, self.h_dim*5)
+        # state_embeddings_img = self.agg_img(state_embeddings_img_agg) + time_embeddings
+        
         state_embeddings_lidar = self.embed_lidar(lidar) + time_embeddings
         
         
         # stack rtg, states and actions and reshape sequence as
         # (r_0, s_0, a_0, r_1, s_1, a_1, r_2, s_2, a_2 ...)
         h = torch.stack(
-            (returns_embeddings_cost, returns_embeddings, state_embeddings_img, state_embeddings_lidar, state_embeddings, action_embeddings), dim=1
-        ).permute(0, 2, 1, 3).reshape(B, 6 * T, self.h_dim)
+            (returns_embeddings_cost, returns_embeddings, state_embeddings_lidar, state_embeddings, action_embeddings), dim=1
+        ).permute(0, 2, 1, 3).reshape(B, 5 * T, self.h_dim)
 
         h = self.embed_ln(h)
 
@@ -346,13 +348,13 @@ class SafeDecisionTransformer_Structure(nn.Module):
         # that is, for each timestep (t) we have 3 output embeddings from the transformer,
         # each conditioned on all previous timesteps plus 
         # the 3 input variables at that timestep (r_t, s_t, a_t) in sequence.
-        h = h.reshape(B, T, 6, self.h_dim).permute(0, 2, 1, 3)
+        h = h.reshape(B, T, 5, self.h_dim).permute(0, 2, 1, 3)
         
         # get predictions
-        return_cost_preds = self.predict_ctg(h[:,5])     # predict next rtg given c, r, s, a
-        return_preds = self.predict_rtg(h[:,5])     # predict next rtg given c, r, s, a
-        state_preds = self.predict_state(h[:,5])    # predict next state given c, r, s, a
-        action_preds = self.predict_action(h[:,4])  # predict action given c, r, s
+        return_cost_preds = self.predict_ctg(h[:,4])     # predict next rtg given c, r, s, a
+        return_preds = self.predict_rtg(h[:,4])     # predict next rtg given c, r, s, a
+        state_preds = self.predict_state(h[:,4])    # predict next state given c, r, s, a
+        action_preds = self.predict_action(h[:,3])  # predict action given c, r, s
 
         return state_preds, action_preds, return_preds, return_cost_preds
 

@@ -122,7 +122,7 @@ class PPOLag(PPO):
         global_vars = {
             "timestep": self._counters[NUM_AGENT_STEPS_SAMPLED],
         }
-
+        
         # Update weights - after learning on the local worker - on all remote
         # workers.
         if self.workers.remote_workers():

@@ -8,6 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from ssr.agent.DT.model import DecisionTransformer, SafeDecisionTransformer, SafeDecisionTransformer_Structure
 from ssr.agent.DT.utils import SafeDTTrajectoryDataset, SafeDTTrajectoryDataset_Structure, evaluate_on_env, evaluate_on_env_structure
 from utils.utils import CPU, CUDA
+from metadrive.manager.traffic_manager import TrafficMode
 
 from envs.envs import State_TopDownMetaDriveEnv
 
@@ -29,7 +30,25 @@ def get_train_parser():
     return parser
 
 def make_envs(): 
-    config = dict(traffic_density=0.2, vehicle_config=dict(lidar=dict(num_lasers=240, distance=50, num_others=4)))
+    config = dict(
+        environment_num=1000, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        start_seed=0, #tune.grid_search([0, 1000]),
+        frame_stack=3, # TODO: debug
+        safe_rl_env=True,
+        random_traffic=False,
+        accident_prob=0,
+        vehicle_config=dict(lidar=dict(
+            num_lasers=240,
+            distance=50,
+            num_others=4
+        )),
+        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
+        traffic_mode=TrafficMode.Hybrid,
+        horizon=1000,
+        # IDM_agent=True,
+        # resolution_size=64,
+        # generalized_blocks=tune.grid_search([['X', 'T']])
+    )
     return State_TopDownMetaDriveEnv(config)
 
 
@@ -40,7 +59,7 @@ if __name__ == '__main__':
     
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     data_iter = iter(train_dataloader)
-
+    
     model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
     optimizer = torch.optim.AdamW(
 					model.parameters(), 
@@ -94,11 +113,14 @@ if __name__ == '__main__':
 
     
         results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=10, 
-                                            rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=16, max_test_ep_len=1000)
+                                            rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=32, max_test_ep_len=1000)
         
         eval_avg_reward = results['eval/avg_reward']
         eval_avg_ep_len = results['eval/avg_ep_len']
         eval_avg_succ = results['eval/success_rate']
+        eval_avg_crash = results['eval/crash_rate']
+        eval_avg_oor = results['eval/oor_rate']
+        eval_avg_max_step = results['eval/max_step']
         eval_avg_cost = results['eval/avg_cost']
         
         log_str = ("=" * 60 + '\n' +
@@ -107,6 +129,9 @@ if __name__ == '__main__':
             "eval avg reward: " + format(eval_avg_reward, ".5f") + '\n' + 
 			"eval avg ep len: " + format(eval_avg_ep_len, ".5f") + '\n' +
 			"eval avg succ: " + format(eval_avg_succ, ".5f") + '\n' +
+			"eval avg crash: " + format(eval_avg_crash, ".5f") + '\n' +
+			"eval avg oor: " + format(eval_avg_oor, ".5f") + '\n' +
+			"eval avg overtime: " + format(eval_avg_max_step, ".5f") + '\n' +
 			"eval avg cost: " + format(eval_avg_cost, ".5f") + '\n'
             )
         
