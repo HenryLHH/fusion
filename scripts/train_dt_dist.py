@@ -6,8 +6,18 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
-from ssr.agent.DT.model import DecisionTransformer, SafeDecisionTransformer, SafeDecisionTransformer_Structure
-from ssr.agent.DT.utils import SafeDTTrajectoryDataset, SafeDTTrajectoryDataset_Structure, evaluate_on_env, evaluate_on_env_structure
+from ssr.agent.DT.model import (
+    DecisionTransformer, 
+    SafeDecisionTransformer, 
+    SafeDecisionTransformer_Structure, 
+    SafeDecisionTransformer_Structure_Bayes
+)
+from ssr.agent.DT.utils import (
+    SafeDTTrajectoryDataset, 
+    SafeDTTrajectoryDataset_Structure, 
+    evaluate_on_env, 
+    evaluate_on_env_structure
+)
 from utils.utils import CPU, CUDA
 from metadrive.manager.traffic_manager import TrafficMode
 
@@ -34,7 +44,7 @@ def get_train_parser():
 def make_envs(): 
     config = dict(
         environment_num=50, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
-        start_seed=0, #tune.grid_search([0, 1000]),
+        start_seed=args.seed, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
         safe_rl_env=True,
         random_traffic=False,
@@ -63,13 +73,13 @@ if __name__ == '__main__':
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     data_iter = iter(train_dataloader)
     
-    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
+    model = CUDA(SafeDecisionTransformer_Structure_Bayes(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
     optimizer = torch.optim.AdamW(
 					model.parameters(), 
 					lr=lr, 
 					weight_decay=wt_decay
 				)
-    loss_criteria = nn.GaussianNLLLoss()
+    loss_criteria = nn.GaussianNLLLoss(reduction='mean')
     
     scheduler = torch.optim.lr_scheduler.LambdaLR(
 		optimizer,
@@ -101,10 +111,12 @@ if __name__ == '__main__':
             
             action_target = CUDA(torch.clone(actions).detach())
             state_preds, action_preds, return_preds, returns_pred_cost = model.forward(timesteps, states, actions, returns_to_go, returns_to_go_cost)
-            action_preds = action_preds.view(-1, 2)[traj_mask.view(-1,) > 0]
+            action_preds_mean, action_preds_var = action_preds
+            action_preds_mean = action_preds_mean.view(-1, 2)[traj_mask.view(-1,) > 0]
+            action_preds_var = action_preds_var.view(-1, 2)[traj_mask.view(-1,) > 0]
             action_target = action_target.view(-1, 2)[traj_mask.view(-1,) > 0]
-
-            action_loss = F.mse_loss(action_preds, action_target, reduction='mean')
+            action_loss = loss_criteria(action_preds_mean, action_target, action_preds_var)
+            # action_loss = F.mse_loss(action_preds, action_target, reduction='mean')
             
             optimizer.zero_grad()
             action_loss.backward()
@@ -116,7 +128,7 @@ if __name__ == '__main__':
         mean_action_loss = np.mean(log_action_losses)
         total_updates += num_updates_per_iter    
 
-    
+
         results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=10, 
                                             rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
         

@@ -237,7 +237,7 @@ def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_t
                 for env_id in range(eval_batch_size)], dim=0).to(device)
             
             # print(state_batch.shape)
-            _, act_preds, _, _ = model.forward(ts_batch, [state_batch, lidar_batch, img_batch], act_batch, rtg_batch, ctg_batch)                        
+            _, act_preds, _, _ = model.forward(ts_batch, [state_batch, lidar_batch, img_batch], act_batch, rtg_batch, ctg_batch, deterministic=True)                        
             act = act_preds[:, -1].detach()
             
             # if t < context_len:

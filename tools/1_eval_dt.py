@@ -43,15 +43,15 @@ def get_train_parser():
 
 if __name__ == '__main__':
 
-    env = SubprocVecEnv([make_envs for _ in range(16)])
+    env = SubprocVecEnv([make_envs for _ in range(32)])
     args = get_train_parser().parse_args()
     model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
 
     model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
     print('model loaded')
-    results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=400, ctg_target=20, 
+    results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=15, 
                                                 rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
-
+    
     eval_avg_reward = results['eval/avg_reward']
     eval_avg_ep_len = results['eval/avg_ep_len']
     eval_avg_succ = results['eval/success_rate']
