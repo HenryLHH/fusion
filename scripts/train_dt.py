@@ -26,12 +26,13 @@ warmup_steps = 10000
 def get_train_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
+    parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
 
     return parser
 
 def make_envs(): 
     config = dict(
-        environment_num=1000, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        environment_num=50, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
         start_seed=0, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
         safe_rl_env=True,
@@ -54,9 +55,10 @@ def make_envs():
 
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
-    train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_bisim_cost_continuous_xsc', 
-                                num_traj=1060, context_len=30)
-    
+    # train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_bisim_cost_continuous_xsc', 
+    #                             num_traj=1060, context_len=30)
+    train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
+                                num_traj=1056, context_len=30)
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     data_iter = iter(train_dataloader)
     
@@ -74,8 +76,9 @@ if __name__ == '__main__':
     total_updates = 0
     
     
-    log_dict = {'reward': [], 'cost': [], 'success_rate': []}
+    log_dict = {'reward': [], 'cost': [], 'success_rate': [], 'oor_rate': [], 'crash_rate': [], 'max_step': []}
     env = SubprocVecEnv([make_envs for _ in range(16)])
+    best_succ = 0.
     
     for e in range(NUM_EPOCHS): 
         log_action_losses = []
@@ -113,7 +116,7 @@ if __name__ == '__main__':
 
     
         results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=10, 
-                                            rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=32, max_test_ep_len=1000)
+                                            rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
         
         eval_avg_reward = results['eval/avg_reward']
         eval_avg_ep_len = results['eval/avg_ep_len']
@@ -139,6 +142,17 @@ if __name__ == '__main__':
         
         log_dict['reward'].append(eval_avg_reward)
         log_dict['cost'].append(eval_avg_cost)
+        log_dict['oor_rate'].append(eval_avg_oor)
+        log_dict['crash_rate'].append(eval_avg_crash)
+        log_dict['max_step'].append(eval_avg_max_step)
         log_dict['success_rate'].append(eval_avg_succ)
-        if e % 1 == 0: 
-            np.save('log/'+args.model+'.npy', log_dict)
+        # if e % 10 == 0: 
+        np.save('log/'+args.model+'.npy', log_dict)
+        if e % 10 == 0: 
+            torch.save(model.state_dict(), 'checkpoint/'+args.model+'_{:3d}.pt'.format(e))
+        if eval_avg_succ > best_succ: 
+            print('best success rate found!')
+            best_succ = eval_avg_succ
+            torch.save(model.state_dict(), 'checkpoint/'+args.model+'_best.pt')
+    
+    env.close()
