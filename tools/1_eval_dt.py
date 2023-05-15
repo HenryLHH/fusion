@@ -42,9 +42,8 @@ def get_train_parser():
 
 
 if __name__ == '__main__':
-
-    env = SubprocVecEnv([make_envs for _ in range(32)])
     args = get_train_parser().parse_args()
+    env = SubprocVecEnv([make_envs for _ in range(32)])
     model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
 
     model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))

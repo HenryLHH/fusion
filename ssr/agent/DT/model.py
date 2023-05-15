@@ -260,7 +260,7 @@ class SafeDecisionTransformer_Structure(nn.Module):
         self.h_dim = h_dim
 
         ### transformer blocks
-        input_seq_len = 5 * context_len
+        input_seq_len = 4 * context_len
         blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
         self.transformer = nn.Sequential(*blocks)
 
@@ -288,7 +288,7 @@ class SafeDecisionTransformer_Structure(nn.Module):
         print('Image Encoder Freezed')
         
         self.embed_state = torch.nn.Linear(state_dim, h_dim)
-
+        
         # # discrete actions
         # self.embed_action = torch.nn.Embedding(act_dim, h_dim)
         # use_action_tanh = False # False for discrete actions
@@ -307,7 +307,7 @@ class SafeDecisionTransformer_Structure(nn.Module):
         )
 
 
-    def forward(self, timesteps, states, actions, returns_to_go, returns_to_go_cost):
+    def forward(self, timesteps, states, actions, returns_to_go, returns_to_go_cost, deterministic=False):
         state, lidar, img = states        
         B, T, _ = state.shape
 
@@ -324,14 +324,14 @@ class SafeDecisionTransformer_Structure(nn.Module):
         # state_embeddings_img_agg = state_embeddings_img_agg.reshape(B, T, self.h_dim*5)
         # state_embeddings_img = self.agg_img(state_embeddings_img_agg) + time_embeddings
         
-        state_embeddings_lidar = self.embed_lidar(lidar) + time_embeddings
+        # state_embeddings_lidar = self.embed_lidar(lidar) + time_embeddings
         
         
         # stack rtg, states and actions and reshape sequence as
         # (r_0, s_0, a_0, r_1, s_1, a_1, r_2, s_2, a_2 ...)
         h = torch.stack(
-            (returns_embeddings_cost, returns_embeddings, state_embeddings_lidar, state_embeddings, action_embeddings), dim=1
-        ).permute(0, 2, 1, 3).reshape(B, 5 * T, self.h_dim)
+            (returns_embeddings_cost, returns_embeddings, state_embeddings, action_embeddings), dim=1
+        ).permute(0, 2, 1, 3).reshape(B, 4 * T, self.h_dim)
 
         h = self.embed_ln(h)
 
@@ -348,13 +348,13 @@ class SafeDecisionTransformer_Structure(nn.Module):
         # that is, for each timestep (t) we have 3 output embeddings from the transformer,
         # each conditioned on all previous timesteps plus 
         # the 3 input variables at that timestep (r_t, s_t, a_t) in sequence.
-        h = h.reshape(B, T, 5, self.h_dim).permute(0, 2, 1, 3)
+        h = h.reshape(B, T, 4, self.h_dim).permute(0, 2, 1, 3)
         
         # get predictions
-        return_cost_preds = self.predict_ctg(h[:,4])     # predict next rtg given c, r, s, a
-        return_preds = self.predict_rtg(h[:,4])     # predict next rtg given c, r, s, a
-        state_preds = self.predict_state(h[:,4])    # predict next state given c, r, s, a
-        action_preds = self.predict_action(h[:,3])  # predict action given c, r, s
+        return_cost_preds = self.predict_ctg(h[:,3])     # predict next rtg given c, r, s, a
+        return_preds = self.predict_rtg(h[:,3])     # predict next rtg given c, r, s, a
+        state_preds = self.predict_state(h[:,3])    # predict next state given c, r, s, a
+        action_preds = self.predict_action(h[:,2])  # predict action given c, r, s
 
         return state_preds, action_preds, return_preds, return_cost_preds
 
@@ -418,7 +418,7 @@ class SafeDecisionTransformer_Structure_Bayes(nn.Module):
         self.predict_action_var = nn.Sequential(
             *([nn.Linear(h_dim, act_dim)] + ([nn.Sigmoid()] if use_action_tanh else []))
         )
-        self.var_min = 1e-3
+        self.var_min = 1e-6
         self.var_max = 1.
 
     def forward(self, timesteps, states, actions, returns_to_go, returns_to_go_cost, deterministic=False):

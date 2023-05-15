@@ -63,7 +63,7 @@ if __name__ == '__main__':
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     data_iter = iter(train_dataloader)
     
-    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
+    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
     optimizer = torch.optim.AdamW(
 					model.parameters(), 
 					lr=lr, 
@@ -105,15 +105,22 @@ if __name__ == '__main__':
             action_target = action_target.view(-1, 2)[traj_mask.view(-1,) > 0]
 
             action_loss = F.mse_loss(action_preds, action_target, reduction='mean')
+            rtg_loss = F.mse_loss(returns_to_go, return_preds, reduction='mean')
+            ctg_loss = F.mse_loss(returns_to_go_cost, returns_pred_cost, reduction='mean')
             
+            action_loss += rtg_loss + ctg_loss
             optimizer.zero_grad()
             action_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
             optimizer.step()
             scheduler.step()
-            log_action_losses.append(action_loss.detach().cpu().item())
+            log_action_losses.append([action_loss.detach().cpu().item(), rtg_loss.detach().cpu().item(), ctg_loss.detach().cpu().item()])
 
-        mean_action_loss = np.mean(log_action_losses)
+        log_action_losses = np.array(log_action_losses)
+        mean_action_loss = np.mean(log_action_losses[:, 0])
+        mean_rtg_loss = np.mean(log_action_losses[:, 1])
+        mean_ctg_loss = np.mean(log_action_losses[:, 2])
+        
         total_updates += num_updates_per_iter    
 
     
@@ -131,6 +138,8 @@ if __name__ == '__main__':
         log_str = ("=" * 60 + '\n' +
             "num of updates: " + str(total_updates) + '\n' +
             "action loss: " +  format(mean_action_loss, ".5f") + '\n' + 
+            "rtg loss: " +  format(mean_rtg_loss, ".5f") + '\n' + 
+            "ctg loss: " +  format(mean_ctg_loss, ".5f") + '\n' + 
             "eval avg reward: " + format(eval_avg_reward, ".5f") + '\n' + 
 			"eval avg ep len: " + format(eval_avg_ep_len, ".5f") + '\n' +
 			"eval avg succ: " + format(eval_avg_succ, ".5f") + '\n' +
