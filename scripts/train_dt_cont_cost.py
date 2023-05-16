@@ -6,8 +6,19 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
-from ssr.agent.DT.model import DecisionTransformer, SafeDecisionTransformer, SafeDecisionTransformer_Structure
-from ssr.agent.DT.utils import SafeDTTrajectoryDataset, SafeDTTrajectoryDataset_Structure, evaluate_on_env, evaluate_on_env_structure
+from ssr.agent.DT.model import (
+    DecisionTransformer, 
+    SafeDecisionTransformer, 
+    SafeDecisionTransformer_Structure
+)
+from ssr.agent.DT.utils import (
+    SafeDTTrajectoryDataset, 
+    SafeDTTrajectoryDataset_Structure, 
+    SafeDTTrajectoryDataset_Structure_Cont,
+    evaluate_on_env, 
+    evaluate_on_env_structure,
+    evaluate_on_env_structure_cont
+)
 from utils.utils import CPU, CUDA
 from metadrive.manager.traffic_manager import TrafficMode
 
@@ -56,10 +67,10 @@ def make_envs():
 
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
-    # train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_bisim_cost_continuous_xsc', 
-    #                             num_traj=1060, context_len=30)
-    train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
-                                num_traj=1056, context_len=30)
+    train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_bisim_cost_continuous_xsc', 
+                                num_traj=1060, context_len=30)
+    # train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
+    #                             num_traj=1056, context_len=30)
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     data_iter = iter(train_dataloader)
     
@@ -105,10 +116,10 @@ if __name__ == '__main__':
             action_target = action_target.view(-1, 2)[traj_mask.view(-1,) > 0]
 
             action_loss = F.mse_loss(action_preds, action_target, reduction='mean')
-            rtg_loss = F.mse_loss(returns_to_go, return_preds, reduction='mean')
-            ctg_loss = F.mse_loss(returns_to_go_cost, returns_pred_cost, reduction='mean')
+            # rtg_loss = F.mse_loss(returns_to_go, return_preds, reduction='mean')
+            # ctg_loss = F.mse_loss(returns_to_go_cost, returns_pred_cost, reduction='mean')
             
-            action_loss += rtg_loss + ctg_loss
+            # action_loss += rtg_loss + ctg_loss
             optimizer.zero_grad()
             action_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
@@ -124,7 +135,7 @@ if __name__ == '__main__':
         total_updates += num_updates_per_iter    
 
     
-        results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=8, 
+        results = evaluate_on_env_structure_cont(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=10., 
                                             rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
         
         eval_avg_reward = results['eval/avg_reward']

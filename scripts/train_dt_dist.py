@@ -66,10 +66,10 @@ def make_envs():
 
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
-    # train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_bisim_cost_continuous_xsc', 
-    #                             num_traj=1060, context_len=30)
-    train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
-                                num_traj=1056, context_len=30)
+    train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_bisim_cost_continuous_xsc', 
+                                num_traj=1060, context_len=30)
+    # train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
+    #                             num_traj=1056, context_len=30)
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     data_iter = iter(train_dataloader)
     

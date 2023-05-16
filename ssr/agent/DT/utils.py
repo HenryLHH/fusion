@@ -116,7 +116,7 @@ def evaluate_on_env(model, device, context_len, env, rtg_target, ctg_target, rtg
                 
                 # add action in placeholder
                 actions[0, t] = act
-                running_cost = info['cost']
+                running_cost = info['cost_sparse']
                 
                 total_reward += running_reward
                 total_cost += running_cost
@@ -208,7 +208,193 @@ def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_t
             
             # calcualate running rtg and add it in placeholder
             running_rtg = torch.clamp(running_rtg - (running_reward / rtg_scale), torch.zeros_like(running_rtg))
-            running_ctg = torch.clamp(running_ctg - (running_cost / ctg_scale), 0.1*torch.ones_like(running_ctg))
+            running_ctg = torch.clamp(running_ctg - (running_cost / ctg_scale), torch.zeros_like(running_ctg))
+            
+            rewards_to_go[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = CUDA(running_rtg.type(torch.FloatTensor))
+            costs_to_go[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = CUDA(running_ctg.type(torch.FloatTensor))
+            # print([t - timestep_last[env_id] for env_id in range(eval_batch_size)])
+            
+            ts_batch = torch.cat([timesteps[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else timesteps[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            state_batch = torch.cat([states[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else states[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            lidar_batch = torch.cat([lidar[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else lidar[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            img_batch = torch.cat([image[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else image[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            act_batch = torch.cat([actions[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else actions[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            rtg_batch = torch.cat([rewards_to_go[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else rewards_to_go[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            ctg_batch = torch.cat([costs_to_go[[env_id], :context_len] if t - timestep_last[env_id] < context_len \
+                else costs_to_go[[env_id], t-timestep_last[env_id]-context_len+1:t-timestep_last[env_id]+1] \
+                for env_id in range(eval_batch_size)], dim=0).to(device)
+            
+            # print(state_batch.shape)
+            _, act_preds, _, _ = model.forward(ts_batch, [state_batch, lidar_batch, img_batch], act_batch, rtg_batch, ctg_batch, deterministic=True)                        
+            act = act_preds[:, -1].detach()
+            
+            # if t < context_len:
+            #     _, act_preds, _, _ = model.forward(timesteps[:,:context_len],
+            #                                 [states[:,:context_len], lidar[:, :context_len], image[:, :context_len]],
+            #                                 actions[:,:context_len],
+            #                                 rewards_to_go[:,:context_len], 
+            #                                 costs_to_go[:, :context_len])
+            #     act = act_preds[:, t].detach()
+            # else:
+            #     _, act_preds, _, _ = model.forward(timesteps[:,t-context_len+1:t+1],
+            #                                 [states[:,t-context_len+1:t+1], lidar[:,t-context_len+1:t+1], image[:,t-context_len+1:t+1]],
+            #                                 actions[:,t-context_len+1:t+1],
+            #                                 rewards_to_go[:,t-context_len+1:t+1], 
+            #                                 costs_to_go[:,t-context_len+1:t+1], 
+            #                                 )
+            #     act = act_preds[:, -1].detach()
+            
+            running_state, running_reward, done, info = env.step(act.cpu().numpy())
+            # add action in placeholder
+            actions[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = act
+            running_cost = np.array([info[idx]['cost_sparse'] for idx in range(len(info))])
+            total_reward += np.sum(running_reward)
+            total_cost += running_cost.sum()
+            
+            running_reward = CUDA(running_reward).reshape(-1, 1)
+            running_cost = CUDA(running_cost).reshape(-1, 1)
+            
+            if render:
+                env.render()
+            # print(done)
+            for i in range(len(done)):
+                if done[i]: 
+                    total_succ.append([info[i]['arrive_dest'], info[i]['out_of_road'], info[i]['crash'], info[i]['max_step']])
+                    count_done += 1
+                    rewards_to_go[i] = 0
+                    running_reward[i] = 0
+                    running_cost[i] = 0
+                    
+                    actions[i] = 0 
+                    states[i] = 0
+                    image[i] = 0
+                    lidar[i] = 0
+                    running_rtg[i] = rtg_target / rtg_scale
+                    running_ctg[i] = ctg_target / ctg_scale
+                    timestep_last[i] = t+1
+                    pbar.update(1)
+                    if count_done >= num_eval_ep: 
+                        break
+                    # break
+                # else: 
+                #     if t - timestep_last[i] >= max_test_ep_len: 
+                #         total_succ.append([False, False])
+                #         count_done += 1
+                #         rewards_to_go[i] = 0
+                #         running_reward[i] = 0
+                #         running_cost[i] = 0
+                        
+                #         actions[i] = 0 
+                #         states[i] = 0
+                #         image[i] = 0
+                #         lidar[i] = 0
+                #         running_rtg = rtg_target / rtg_scale
+                #         running_ctg = ctg_target / ctg_scale
+                #         timestep_last[i] = t+1
+                #         pbar.update(1)
+                #         if count_done >= num_eval_ep: 
+                #             break
+            t += 1
+    
+    pbar.close()
+    results['eval/avg_reward'] = total_reward / count_done
+    results['eval/avg_ep_len'] = total_timesteps / count_done
+    results['eval/success_rate'] = np.array(total_succ)[:, 0].mean()
+    results['eval/oor_rate'] = np.array(total_succ)[:, 1].mean()
+    results['eval/crash_rate'] = np.array(total_succ)[:, 2].mean()
+    results['eval/max_step'] = np.array(total_succ)[:, 3].mean()
+    results['eval/avg_cost'] = total_cost / count_done
+    
+
+    return results
+
+
+def evaluate_on_env_structure_cont(model, device, context_len, env, rtg_target, ctg_target, rtg_scale, ctg_scale,
+                    num_eval_ep=10, max_test_ep_len=1000,
+                    state_mean=None, state_std=None, render=False):
+
+    eval_batch_size = env.num_envs  # required for forward pass
+
+    results = {}
+    total_reward = 0
+    total_timesteps = 0
+    total_cost = 0
+    total_succ = []
+    
+    state_dim = 35 # env.observation_space.shape[0]
+    act_dim = 2 # env.action_space.shape[0]
+
+    if state_mean is None:
+        state_mean = torch.zeros((state_dim,)).to(device)
+    else:
+        state_mean = torch.from_numpy(state_mean).to(device)
+
+    if state_std is None:
+        state_std = torch.ones((state_dim,)).to(device)
+    else:
+        state_std = torch.from_numpy(state_std).to(device)
+
+    # same as timesteps used for training the transformer
+    # also, crashes if device is passed to arange()
+    timesteps = torch.arange(start=0, end=max_test_ep_len, step=1)
+    timesteps = timesteps.repeat(eval_batch_size, 1).to(device)
+
+    model.eval()
+    count_done = 0
+    pbar = tqdm(total=num_eval_ep)
+    timestep_last = np.zeros(eval_batch_size, dtype=np.int32)
+    t = 0
+    with torch.no_grad():
+
+    # for _ in trange(num_eval_ep):
+        actions = torch.zeros((eval_batch_size, max_test_ep_len, act_dim),
+                            dtype=torch.float32, device=device)
+        states = torch.zeros((eval_batch_size, max_test_ep_len, state_dim),
+                            dtype=torch.float32, device=device)
+        rewards_to_go = torch.zeros((eval_batch_size, max_test_ep_len, 1),
+                            dtype=torch.float32, device=device)
+        costs_to_go = torch.zeros((eval_batch_size, max_test_ep_len, 1),
+                            dtype=torch.float32, device=device)
+        image = torch.zeros((eval_batch_size, max_test_ep_len, 5, 84, 84),
+                            dtype=torch.float32, device=device)
+        lidar = torch.zeros((eval_batch_size, max_test_ep_len, 240),
+                            dtype=torch.float32, device=device)
+        running_state = env.reset()
+        running_reward = torch.zeros((eval_batch_size, 1), dtype=torch.float32, device=device)
+        running_cost = torch.zeros((eval_batch_size, 1), dtype=torch.float32, device=device)
+        running_rtg = rtg_target / rtg_scale * torch.ones((eval_batch_size, 1), dtype=torch.float32, device=device)
+        running_ctg = ctg_target / ctg_scale * torch.ones((eval_batch_size, 1), dtype=torch.float32, device=device)
+
+        while count_done < num_eval_ep: 
+            # print(t)
+            # zeros place holders
+
+            # init episode
+
+            
+            total_timesteps += eval_batch_size
+            
+            # add state in placeholder and normalize
+            states[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = torch.from_numpy(running_state['state']).to(device)
+            # states[:, t] = (states[:, t] - state_mean) / state_std
+            image[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = torch.from_numpy(running_state['img']).to(device)
+            lidar[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = torch.from_numpy(running_state['lidar']).to(device)
+            
+            # calcualate running rtg and add it in placeholder
+            running_rtg = torch.clamp(running_rtg - (running_reward / rtg_scale), torch.zeros_like(running_rtg))
+            running_ctg = torch.clamp(running_ctg - (running_cost / ctg_scale), torch.zeros_like(running_ctg))
             
             rewards_to_go[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = CUDA(running_rtg.type(torch.FloatTensor))
             costs_to_go[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = CUDA(running_ctg.type(torch.FloatTensor))
@@ -484,13 +670,16 @@ class SafeDTTrajectoryDataset_Structure(Dataset):
         self.ctg_scale = ctg_scale
         
         self.trajectories = []
+        success_rate = []
+        cost, reward = [], []
+        action = []
         for idx in trange(num_traj):
             # data = np.load(self.dataset_path + '/data/' + str(idx) + '.npy', allow_pickle=True)
             info = np.load(self.dataset_path + '/label/' + str(idx) + '.pkl', allow_pickle=True)
                         
             traj = {}
             traj['reward'] = np.array([[d['step_reward']] for d in info], dtype=np.float32)
-            traj['cost'] = np.array([[d['cost_sparse']] for d in info],  dtype=np.float32) # cost
+            traj['cost'] = np.array([[d['cost_sparse']] for d in info],  dtype=np.float32) # cost_sparse
             traj['state'] = np.array([d['true_state'] for d in info],  dtype=np.float32)        
             traj['lidar_state'] = np.array([d['lidar_state'] for d in info], dtype=np.float32)
             traj['img_state'] = np.zeros_like(traj['state']) # np.array(data, dtype=np.float32)
@@ -499,9 +688,89 @@ class SafeDTTrajectoryDataset_Structure(Dataset):
             traj['returns_to_go'] = discount_cumsum(traj['reward'], 1.0) / self.rtg_scale
             traj['returns_to_go_cost'] = discount_cumsum(traj['cost'], 1.0) / self.ctg_scale
             self.trajectories.append(traj)
+            action.append(traj['actions'])
+            success_rate.append(info[-1]['arrive_dest'])
+            reward.append(traj['returns_to_go'][0])
+            cost.append(traj['returns_to_go_cost'][0])
         
         print('Trajectory loaded: ', len(self.trajectories))
-    
+        print('Expert Stats: ', np.mean(success_rate), self.rtg_scale*np.mean(reward), self.ctg_scale*np.mean(cost))
+        action = np.concatenate(action, axis=0).reshape(-1, 2)
+        import matplotlib.pyplot as plt
+        plt.scatter(action[:, 0], action[:, 1], s=1)
+        plt.savefig('dataset')
+        print(self.rtg_scale*np.std(reward), self.ctg_scale*np.std(cost))
+        
+        
+    def __len__(self):
+        return self.num_traj
+
+    def __getitem__(self, idx):
+        
+        traj = self.trajectories[idx]
+        traj_len = len(traj['reward'])
+
+        if traj_len >= self.context_len:
+            # sample random index to slice trajectory
+            si = random.randint(0, traj_len - self.context_len)
+
+            states = (torch.from_numpy(traj['state'][si : si + self.context_len]), 
+                      torch.from_numpy(traj['lidar_state'][si : si + self.context_len]), 
+                      torch.from_numpy(traj['img_state'][si : si + self.context_len]))
+            
+            actions = torch.from_numpy(traj['actions'][si : si + self.context_len])
+            returns_to_go = torch.from_numpy(traj['returns_to_go'][si : si + self.context_len])
+            returns_to_go_cost = torch.from_numpy(traj['returns_to_go_cost'][si : si + self.context_len])
+            
+            timesteps = torch.arange(start=si, end=si+self.context_len, step=1)
+
+            # all ones since no padding
+            traj_mask = torch.ones(self.context_len, dtype=torch.long)
+
+        return  timesteps, states, actions, returns_to_go, returns_to_go_cost, traj_mask
+
+
+class SafeDTTrajectoryDataset_Structure_Cont(Dataset):
+    def __init__(self, dataset_path, num_traj, context_len, rtg_scale=40.0, ctg_scale=10.0):
+        self.dataset_path = dataset_path
+        self.context_len = context_len
+        self.num_traj = num_traj
+        self.rtg_scale = rtg_scale
+        self.ctg_scale = ctg_scale
+        
+        self.trajectories = []
+        success_rate = []
+        cost, reward = [], []
+        action = []
+        for idx in trange(num_traj):
+            # data = np.load(self.dataset_path + '/data/' + str(idx) + '.npy', allow_pickle=True)
+            info = np.load(self.dataset_path + '/label/' + str(idx) + '.pkl', allow_pickle=True)
+                        
+            traj = {}
+            traj['reward'] = np.array([[d['step_reward']] for d in info], dtype=np.float32)
+            traj['cost'] = np.array([[d['cost']] for d in info],  dtype=np.float32) # cost_sparse
+            traj['state'] = np.array([d['true_state'] for d in info],  dtype=np.float32)        
+            traj['lidar_state'] = np.array([d['lidar_state'] for d in info], dtype=np.float32)
+            traj['img_state'] = np.zeros_like(traj['state']) # np.array(data, dtype=np.float32)
+            
+            traj['actions'] = np.array([d['raw_action'] for d in info], dtype=np.float32)
+            traj['returns_to_go'] = discount_cumsum(traj['reward'], 1.0) / self.rtg_scale
+            traj['returns_to_go_cost'] = discount_cumsum(traj['cost'], 1.0) / self.ctg_scale
+            self.trajectories.append(traj)
+            action.append(traj['actions'])
+            success_rate.append(info[-1]['arrive_dest'])
+            reward.append(traj['returns_to_go'][0])
+            cost.append(traj['returns_to_go_cost'][0])
+        
+        print('Trajectory loaded: ', len(self.trajectories))
+        print('Expert Stats: ', np.mean(success_rate), self.rtg_scale*np.mean(reward), self.ctg_scale*np.mean(cost))
+        action = np.concatenate(action, axis=0).reshape(-1, 2)
+        import matplotlib.pyplot as plt
+        plt.scatter(action[:, 0], action[:, 1], s=1)
+        plt.savefig('dataset')
+        print(self.rtg_scale*np.std(reward), self.ctg_scale*np.std(cost))
+        
+        
     def __len__(self):
         return self.num_traj
 

@@ -13,7 +13,7 @@ from utils.utils import CUDA
 def make_envs(): 
     config = dict(
         environment_num=50, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
-        start_seed=0, #tune.grid_search([0, 1000]),
+        start_seed=args.seed, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
         safe_rl_env=True,
         random_traffic=False,
@@ -48,7 +48,7 @@ if __name__ == '__main__':
 
     model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
     print('model loaded')
-    results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=15, 
+    results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=1, 
                                                 rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
     
     eval_avg_reward = results['eval/avg_reward']
