@@ -337,7 +337,7 @@ class SafeDecisionTransformer_Structure(nn.Module):
 
         # transformer and prediction
         h = self.transformer(h)
-
+        
         # get h reshaped such that its size = (B x 4 x T x h_dim) and
         # h[:, 0, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t
         # h[:, 1, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t

@@ -39,13 +39,14 @@ def get_train_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
     parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
+    parser.add_argument("--context", type=int, default=30, help='context len of DT')
     parser.add_argument("--continuous", action="store_true")
     
     return parser
 
 def make_envs(): 
     config = dict(
-        environment_num=1, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        environment_num=50, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
         start_seed=args.seed, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
         safe_rl_env=True,
@@ -69,17 +70,17 @@ def make_envs():
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
     if args.continuous: 
-        train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_single_env', 
-                                    num_traj=154, context_len=30)
+        train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics', 
+                                    num_traj=959, context_len=args.context)
     else:
-        train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_single_env', 
-                                    num_traj=154, context_len=30)
+        train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics', 
+                                    num_traj=959, context_len=args.context)
     # train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
     #                             num_traj=1056, context_len=30)
-    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=1)
+    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=8)
     data_iter = iter(train_dataloader)
     
-    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
+    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=args.context, n_heads=1, drop_p=0.1, max_timestep=1000))
     optimizer = torch.optim.AdamW(
 					model.parameters(), 
 					lr=lr, 
@@ -140,10 +141,10 @@ if __name__ == '__main__':
         total_updates += num_updates_per_iter    
 
         if args.continuous: 
-            results = evaluate_on_env_structure_cont(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=10., 
+            results = evaluate_on_env_structure_cont(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=300, ctg_target=10., 
                                                 rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
         else:
-            results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=10., 
+            results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=300, ctg_target=10., 
                                                 rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
                     
         eval_avg_reward = results['eval/avg_reward']

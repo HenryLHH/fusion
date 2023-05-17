@@ -4,7 +4,7 @@ import torch
 from tqdm import trange, tqdm
 from utils.utils import CUDA
 
-def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_ep_len=1000):
+def evaluate_on_env_cnn(model, device, env, num_eval_ep=10, render=False, max_test_ep_len=1000):
 
     eval_batch_size = env.num_envs  # required for forward pass
 
@@ -29,7 +29,7 @@ def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_e
             
             img_state = CUDA(running_state['img'])
             # print(img_state.shape)
-            act_logits = model.policy_network(model.causal_feature_encoder(img_state))                
+            act_logits = model.action_estimator(model.action_encoder(img_state)[1])         
             act = act_logits[:, :2].detach()
             
             running_state, running_reward, done, info = env.step(act.cpu().numpy())
@@ -39,7 +39,7 @@ def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_e
             total_cost += running_cost.sum()
             if render:
                 env.render(mode='top_down', film_size=(800, 800))
-
+            
             for i in range(len(done)):
                 if done[i]: 
                     total_succ.append([info[i]['arrive_dest'], info[i]['out_of_road'], info[i]['crash'], info[i]['max_step']])
@@ -61,9 +61,9 @@ def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_e
     return results
 
 
-def render_env_icil(model, device, env, num_eval_ep=10, render=False, max_test_ep_len=1000):
+def render_env_cnn(model, device, env, num_eval_ep=10, render=False, max_test_ep_len=1000):
 
-    eval_batch_size =1  # required for forward pass
+    eval_batch_size = 1  # required for forward pass
 
     results = {}
     total_reward = 0
@@ -84,9 +84,9 @@ def render_env_icil(model, device, env, num_eval_ep=10, render=False, max_test_e
         while count_done < num_eval_ep: 
             total_timesteps += eval_batch_size
             
-            img_state = CUDA(running_state['img'])
+            img_state = CUDA(np.array([running_state['img']]))
             # print(img_state.shape)
-            act_logits = model.policy_network(model.causal_feature_encoder(img_state))                
+            act_logits = model.action_estimator(model.action_encoder(img_state)[1])         
             act = act_logits[:, :2].detach()
             
             running_state, running_reward, done, info = env.step(act[0].cpu().numpy())
@@ -96,7 +96,7 @@ def render_env_icil(model, device, env, num_eval_ep=10, render=False, max_test_e
             total_cost += running_cost.sum() # running_cost.sum()
             if render:
                 env.render(mode='top_down', film_size=(800, 800))
-
+            
             if done: 
                 total_succ.append([info['arrive_dest'], info['out_of_road'], info['crash'], info['max_step']])
                 count_done += 1

@@ -1,5 +1,7 @@
 log/
+logs/
 checkpoint/
+wandb/
 *.pt
 *.png
 *.jpg

@@ -6,14 +6,12 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from metadrive.manager.traffic_manager import TrafficMode
 from envs.envs import State_TopDownMetaDriveEnv
 
-from ssr.agent.DT.utils import evaluate_on_env_structure
+from ssr.agent.DT.utils import render_env
 from ssr.agent.DT.model import SafeDecisionTransformer_Structure
-from ssr.agent.icil.eval_icil import evaluate_on_env
+from ssr.agent.icil.eval_icil import render_env_icil
 from ssr.agent.icil.icil import ICIL
-from ssr.agent.bisim.eval_cnn import evaluate_on_env_cnn
+from ssr.agent.bisim.eval_cnn import render_env_cnn
 from ssr.encoder.model_actor import BisimEncoder_Head_BP_Actor
-
-
 
 from utils.utils import CUDA
 
@@ -53,22 +51,22 @@ def get_train_parser():
 
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
-    env = SubprocVecEnv([make_envs for _ in range(32)])
+    env = make_envs() # SubprocVecEnv([make_envs for _ in range(32)])
     
     if args.method == 'ssr': 
         model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
         model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
         print('model loaded')
-        results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=0, 
-                                                    rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
+        results = render_env(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=1, 
+                                            rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000, render=True)
     elif args.method == 'icil': 
         model = CUDA(ICIL(state_dim=5, action_dim=2, hidden_dim_input=64, hidden_dim=64))
         model.load_state_dict(torch.load('checkpoint/icil/'+args.model+'.pt'))
-        results = evaluate_on_env(model, torch.device('cuda:0'), env, num_eval_ep=50)
+        results = render_env_icil(model, torch.device('cuda:0'), env, num_eval_ep=50, render=True)
     elif args.method == 'cnn': 
         model = CUDA(BisimEncoder_Head_BP_Actor(hidden_dim=64, output_dim=2, causal=True))
         model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
-        results = evaluate_on_env_cnn(model, torch.device('cuda:0'), env, num_eval_ep=50)
+        results = render_env_cnn(model, torch.device('cuda:0'), env, num_eval_ep=50, render=True)
         
     else: 
         raise NotImplementedError
