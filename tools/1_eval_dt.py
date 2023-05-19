@@ -6,13 +6,13 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from metadrive.manager.traffic_manager import TrafficMode
 from envs.envs import State_TopDownMetaDriveEnv
 
-from ssr.agent.DT.utils import evaluate_on_env_structure
+from ssr.agent.DT.utils import evaluate_on_env_structure, evaluate_on_env_structure_pred
 from ssr.agent.DT.model import SafeDecisionTransformer_Structure
 from ssr.agent.icil.eval_icil import evaluate_on_env
 from ssr.agent.icil.icil import ICIL
 from ssr.agent.bisim.eval_cnn import evaluate_on_env_cnn
 from ssr.encoder.model_actor import BisimEncoder_Head_BP_Actor
-
+from ssr.encoder.model_state_est import BisimEncoder_Head_BP_Actor as StatePred
 
 
 from utils.utils import CUDA
@@ -46,6 +46,7 @@ def get_train_parser():
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
     parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
     parser.add_argument("--env_num", type=int, default=50, help="checkpoint to load")
+    parser.add_argument("--hidden", type=int, default=64, help='hidden dim of DT')
     
 
     return parser
@@ -56,11 +57,21 @@ if __name__ == '__main__':
     env = SubprocVecEnv([make_envs for _ in range(32)])
     
     if args.method == 'ssr': 
-        model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
+        model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
         model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
         print('model loaded')
-        results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=0, 
+        results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=3., 
                                                     rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
+    elif args.method == 'ssr_pred': 
+        model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
+        model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
+        model_est = CUDA(StatePred(hidden_dim=64, output_dim=35, causal=True))
+        model_est.load_state_dict(torch.load('checkpoint/state_est.pt'))
+        
+        print('model loaded')
+        results = evaluate_on_env_structure_pred(model, model_est, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=3., 
+                                                    rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
+
     elif args.method == 'icil': 
         model = CUDA(ICIL(state_dim=5, action_dim=2, hidden_dim_input=64, hidden_dim=64))
         model.load_state_dict(torch.load('checkpoint/icil/'+args.model+'.pt'))
@@ -72,8 +83,6 @@ if __name__ == '__main__':
         
     else: 
         raise NotImplementedError
-    
-    
     
     eval_avg_reward = results['eval/avg_reward']
     eval_avg_ep_len = results['eval/avg_ep_len']

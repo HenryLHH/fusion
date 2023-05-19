@@ -15,6 +15,7 @@ def get_train_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
     parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
+    parser.add_argument("--hidden", type=int, default=64, help='hidden dim of DT')
 
     return parser
 
@@ -23,7 +24,7 @@ def get_train_parser():
 if __name__ == '__main__': 
     args = get_train_parser().parse_args()
     
-    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
+    model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=30, n_heads=4, drop_p=0.1, max_timestep=1000))
 
     model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
     print('model loaded')

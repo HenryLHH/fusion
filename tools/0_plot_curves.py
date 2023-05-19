@@ -3,7 +3,7 @@ import numpy as np
 import os
 import glob
 
-filenames = glob.glob('log/50_env_context*')
+filenames = glob.glob('log/50_env_dynamics*')
 print(filenames)
 data = [np.load(f, allow_pickle=True) for f in filenames]
 
