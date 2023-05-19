@@ -2,8 +2,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import glob
+import argparse
 
-filenames = glob.glob('log/50_env_dynamics*')
+def get_train_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")    
+
+    return parser
+
+
+args = get_train_parser().parse_args()
+filenames = glob.glob('log/'+args.model)
 print(filenames)
 data = [np.load(f, allow_pickle=True) for f in filenames]
 
