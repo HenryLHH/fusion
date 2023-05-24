@@ -27,12 +27,14 @@ from envs.envs import State_TopDownMetaDriveEnv
 from tqdm import trange
 import argparse
 from stable_baselines3.common.vec_env import SubprocVecEnv
+from utils.exp_utils import make_envs
 
 NUM_EPOCHS = 200
 num_updates_per_iter = 500
 lr = 1e-4
 wt_decay = 1e-4
 warmup_steps = 10000
+decay_steps = 25000
 
 
 def get_train_parser():
@@ -47,31 +49,9 @@ def get_train_parser():
     
     parser.add_argument("--continuous", action="store_true")
     parser.add_argument("--dynamics", action="store_true", help='train world dynamics')
+    parser.add_argument("--value", action="store_true", help='train value predictors')
     
     return parser
-
-def make_envs(): 
-    config = dict(
-        environment_num=50, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
-        start_seed=args.seed, #tune.grid_search([0, 1000]),
-        frame_stack=3, # TODO: debug
-        safe_rl_env=True,
-        random_traffic=False,
-        accident_prob=0,
-        vehicle_config=dict(lidar=dict(
-            num_lasers=240,
-            distance=50,
-            num_others=4
-        )),
-        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
-        traffic_mode=TrafficMode.Hybrid,
-        horizon=1000,
-        # IDM_agent=True,
-        # resolution_size=64,
-        # generalized_blocks=tune.grid_search([['X', 'T']])
-    )
-    return State_TopDownMetaDriveEnv(config)
-
 
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
@@ -83,7 +63,7 @@ if __name__ == '__main__':
                                     num_traj=959, context_len=args.context, rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale)
     # train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
     #                             num_traj=1056, context_len=30)
-    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=8)
+    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=4)
     data_iter = iter(train_dataloader)
     
     model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=args.context, 
@@ -99,12 +79,22 @@ if __name__ == '__main__':
                         lr=lr, 
                         weight_decay=wt_decay
                     )
-    
+    if args.value: 
+        optimizer_value = torch.optim.AdamW(
+                    model.parameters(), 
+                    lr=lr, 
+                    weight_decay=wt_decay
+                )
+        optimizer_value_cost = torch.optim.AdamW(
+            model.parameters(), 
+            lr=lr, 
+            weight_decay=wt_decay
+        )
     loss_criteria = nn.GaussianNLLLoss()
     
     scheduler = torch.optim.lr_scheduler.LambdaLR(
 		optimizer,
-		lambda steps: min((steps+1)/warmup_steps, 1)
+		lambda steps: 1.0 if steps <= decay_steps else min(0.1, np.exp(-1e-4*(steps-decay_steps))) # min((steps+1)/warmup_steps, 1)
 	)
     total_updates = 0
     
@@ -130,18 +120,40 @@ if __name__ == '__main__':
             traj_mask = CUDA(traj_mask)
             
             action_target = CUDA(torch.clone(actions).detach())
-            state_preds, action_preds, return_preds, returns_pred_cost = model.forward(timesteps, states, actions, returns_to_go, returns_to_go_cost)
+            state_preds, action_preds, return_preds, returns_preds_cost = model.forward(timesteps, states, actions, returns_to_go, returns_to_go_cost)
             action_preds = action_preds.view(-1, 2)[traj_mask.view(-1,) > 0]
             action_target = action_target.view(-1, 2)[traj_mask.view(-1,) > 0]
 
             action_loss = F.mse_loss(action_preds, action_target, reduction='mean')
-            if args.dynamics:
+            if args.dynamics and args.value: 
+                state_loss = F.mse_loss(states[0][:, 1:], state_preds[:, :-1], reduction='mean')
+                rtg_loss = F.mse_loss(returns_to_go[:, 1:], return_preds[:, :-1], reduction='mean')
+                ctg_loss = F.mse_loss(returns_to_go_cost[:, 1:], returns_preds_cost[:, :-1], reduction='mean')
+                
+                optimizer.zero_grad()
+                optimizer_dynamics.zero_grad()
+                optimizer_value.zero_grad()
+                optimizer_value_cost.zero_grad()
+                action_loss.backward(retain_graph=True)
+                rtg_loss.backward(retain_graph=True)
+                ctg_loss.backward(retain_graph=True)
+                state_loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
+                optimizer.step()
+                optimizer_dynamics.step()
+                scheduler.step()
+                log_action_losses.append([action_loss.detach().cpu().item(), 
+                            rtg_loss.detach().cpu().item(), 
+                            ctg_loss.detach().cpu().item(), 
+                            state_loss.detach().cpu().item()])     
+                
+            elif args.dynamics:
                 state_loss = F.mse_loss(states[0][:, 1:], state_preds[:, :-1], reduction='mean')
                 optimizer.zero_grad()
                 optimizer_dynamics.zero_grad()
                 action_loss.backward(retain_graph=True)
                 state_loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.05)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
                 optimizer.step()
                 optimizer_dynamics.step()
                 scheduler.step()
@@ -149,12 +161,10 @@ if __name__ == '__main__':
                             rtg_loss.detach().cpu().item(), 
                             ctg_loss.detach().cpu().item(), 
                             state_loss.detach().cpu().item()])
-
-
             else: 
                 optimizer.zero_grad()
                 action_loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.05)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
                 optimizer.step()
                 scheduler.step()
                 log_action_losses.append([action_loss.detach().cpu().item(), rtg_loss.detach().cpu().item(), ctg_loss.detach().cpu().item(), 0.])
@@ -170,10 +180,10 @@ if __name__ == '__main__':
 
         if args.continuous: 
             results = evaluate_on_env_structure_cont(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=300, ctg_target=2., 
-                                                rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=1000)
+                                                rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=1000, use_value_pred=args.value)
         else:
             results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=300, ctg_target=2., 
-                                                 rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=1000)
+                                                 rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=1000, use_value_pred=args.value)
                     
         eval_avg_reward = results['eval/avg_reward']
         eval_avg_ep_len = results['eval/avg_ep_len']

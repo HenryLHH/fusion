@@ -138,7 +138,7 @@ def evaluate_on_env(model, device, context_len, env, rtg_target, ctg_target, rtg
 
 def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_target, rtg_scale, ctg_scale,
                     num_eval_ep=10, max_test_ep_len=1000,
-                    state_mean=None, state_std=None, render=False):
+                    state_mean=None, state_std=None, render=False, use_value_pred=False):
 
     eval_batch_size = env.num_envs  # required for forward pass
 
@@ -191,14 +191,14 @@ def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_t
         running_cost = torch.zeros((eval_batch_size, 1), dtype=torch.float32, device=device)
         running_rtg = rtg_target / rtg_scale * torch.ones((eval_batch_size, 1), dtype=torch.float32, device=device)
         running_ctg = ctg_target / ctg_scale * torch.ones((eval_batch_size, 1), dtype=torch.float32, device=device)
-
+        rtg_pred = rtg_target / rtg_scale * torch.ones((eval_batch_size, 1), dtype=torch.float32, device=device)
+        ctg_pred = ctg_target / ctg_scale * torch.ones((eval_batch_size, 1), dtype=torch.float32, device=device)
+        
         while count_done < num_eval_ep: 
             # print(t)
             # zeros place holders
 
             # init episode
-
-            
             total_timesteps += eval_batch_size
             
             # add state in placeholder and normalize
@@ -208,9 +208,14 @@ def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_t
             lidar[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = torch.from_numpy(running_state['lidar']).to(device)
             
             # calcualate running rtg and add it in placeholder
-            # running_rtg = torch.clamp(running_rtg - (running_reward / rtg_scale), torch.zeros_like(running_rtg))
-            # running_ctg = torch.clamp(running_ctg - (running_cost / ctg_scale), torch.zeros_like(running_ctg))
-            
+            if use_value_pred: 
+                running_rtg = torch.min(rtg_pred, running_rtg - (running_reward / rtg_scale)).clamp(torch.zeros_like(running_rtg))
+                running_ctg = torch.min(ctg_pred, running_ctg - (running_cost / ctg_scale)).clamp(torch.zeros_like(running_ctg))
+                
+            else: 
+                running_rtg = torch.clamp(running_rtg - (running_reward / rtg_scale), torch.zeros_like(running_rtg))
+                running_ctg = torch.clamp(running_ctg - (running_cost / ctg_scale), torch.zeros_like(running_ctg))
+                        
             rewards_to_go[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = CUDA(running_rtg.type(torch.FloatTensor))
             costs_to_go[range(eval_batch_size), [t - timestep_last[env_id] for env_id in range(eval_batch_size)]] = CUDA(running_ctg.type(torch.FloatTensor))
             # print([t - timestep_last[env_id] for env_id in range(eval_batch_size)])
@@ -238,9 +243,10 @@ def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_t
                 for env_id in range(eval_batch_size)], dim=0).to(device)
             
             # print(state_batch.shape)
-            _, act_preds, _, _ = model.forward(ts_batch, [state_batch, lidar_batch, img_batch], act_batch, rtg_batch, ctg_batch, deterministic=True)                        
+            _, act_preds, rtg_pred, ctg_pred = model.forward(ts_batch, [state_batch, lidar_batch, img_batch], act_batch, rtg_batch, ctg_batch, deterministic=True)                        
             act = act_preds[:, -1].detach()
-            
+            rtg_pred = rtg_pred[:, -1].detach()
+            ctg_pred = ctg_pred[:, -1].detach()
             # if t < context_len:
             #     _, act_preds, _, _ = model.forward(timesteps[:,:context_len],
             #                                 [states[:,:context_len], lidar[:, :context_len], image[:, :context_len]],
@@ -678,7 +684,7 @@ def render_env(model, device, context_len, env, rtg_target, ctg_target, rtg_scal
 
 def evaluate_on_env_structure_cont(model, device, context_len, env, rtg_target, ctg_target, rtg_scale, ctg_scale,
                     num_eval_ep=10, max_test_ep_len=1000,
-                    state_mean=None, state_std=None, render=False):
+                    state_mean=None, state_std=None, render=False, use_value_pred=False):
 
     eval_batch_size = env.num_envs  # required for forward pass
 

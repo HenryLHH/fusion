@@ -1,7 +1,24 @@
 import torch
 import torch.optim as optim
 from torch import autograd, nn
+from torch.utils.data import Dataset, DataLoader
+
 from tqdm import tqdm
+import logging
+
+from collections import deque
+
+
+from utils.dataset import Dataset_EBM
+from utils.utils import CUDA
+from ssr.agent.icil.icil_utils import (
+    initialize_replay_buffer, 
+    sample_from_replay_buffer,
+    update_replay_buffer,
+    langevin_rollout,
+    loss_fn
+)
+
 
 # Fully Connected Network
 def get_activation(s_act):
@@ -45,7 +62,7 @@ class EnergyModelNetworkMLP(nn.Module):
         self.net = nn.Sequential(*l_layer)
         self.in_dim = in_dim
         self.out_shape = (out_dim,)
-
+        print(self.net)
     def forward(self, x):
         return self.net(x)
 
@@ -58,11 +75,11 @@ class EnergyModel:
         batch_size,
         adam_alpha,
         buffer,
-        sgld_buffer_size,
-        sgld_learn_rate,
-        sgld_noise_coef,
-        sgld_num_steps,
-        sgld_reinit_freq,
+        sgld_buffer_size=10000,
+        sgld_learn_rate=0.01,
+        sgld_noise_coef=0.01,
+        sgld_num_steps=100,
+        sgld_reinit_freq=0.05,
     ):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -98,7 +115,7 @@ class EnergyModel:
     def _update_energy_model(self):
         samples = self.buffer.sample()
 
-        pos_x = torch.FloatTensor(samples["state"]).to(self.device)
+        pos_x = torch.FloatTensor(samples).to(self.device)
         neg_x = self._sample_via_sgld()
 
         self.optimizer.zero_grad()
@@ -154,3 +171,55 @@ class EnergyModel:
 
     def _get_random_states(self, num_states):
         return torch.FloatTensor(num_states, self.in_dim).uniform_(-1, 1)
+
+if __name__ == '__main__': 
+    device = 'cuda:0'
+    K = 60
+    step_size = 20
+    lambda_var = 0.01
+    alpha = 1
+
+    lr = 0.001
+    batch_size = 128
+    replay_buffer = deque(maxlen=1000)
+
+    energy_nn = CUDA(EnergyModelNetworkMLP(in_dim=35, out_dim=1, l_hidden=(64, 64), activation='relu', out_activation='linear'))
+    optimizer = optim.Adam(energy_nn.parameters())
+    initialize_replay_buffer(replay_buffer, n=batch_size)
+    # data_loader = torch.utils.data.DataLoader(
+    #     torchvision.datasets.MNIST('.', transform=torchvision.transforms.ToTensor(), download=True),
+    #     batch_size=batch_size,
+    #     shuffle=True,
+    #     num_workers=2)
+
+    train_set = Dataset_EBM(file_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics_post', \
+        noise_scale=0, num_files=300000, balanced=True, image=False) # TODO: //10
+    data_loader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
+
+    logging.basicConfig(filename='log/icil_ebm_state.log', level=logging.DEBUG)
+
+    it = 0
+    while True:
+        print(it)
+        x_positive = next(iter(data_loader))
+        x_negative = sample_from_replay_buffer(replay_buffer, n=batch_size)
+        x_positive = x_positive.to(device)
+        x_negative = x_negative.to(device)
+
+        langevin_rollout(x_negative, energy_nn, step_size, lambda_var, K)
+        update_replay_buffer(replay_buffer, (x_negative.to('cpu')))
+        if it % 200 == 0:
+            if it > 0: 
+                print(it, loss.item(), loss_ml, loss_l2)
+            torch.save(energy_nn.state_dict(), 'ssr/agent/icil/ckpt_state/checkpoint_{:05d}.pt'.format(it))
+        if it > 1000: 
+            break
+        optimizer.zero_grad()
+        loss, loss_l2, loss_ml = loss_fn(x_positive, x_negative, energy_nn, alpha)
+        logging.info('%f,%f' % (loss_l2, loss_ml))
+        loss.backward()
+        torch.nn.utils.clip_grad_value_(energy_nn.parameters(), 0.01)
+        optimizer.step()
+
+        it += 1
+    

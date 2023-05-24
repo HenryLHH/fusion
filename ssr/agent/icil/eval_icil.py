@@ -4,7 +4,7 @@ import torch
 from tqdm import trange, tqdm
 from utils.utils import CUDA
 
-def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_ep_len=1000):
+def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_ep_len=1000, image=True):
 
     eval_batch_size = env.num_envs  # required for forward pass
 
@@ -28,8 +28,13 @@ def evaluate_on_env(model, device, env, num_eval_ep=10, render=False, max_test_e
             total_timesteps += eval_batch_size
             
             img_state = CUDA(running_state['img'])
+            pri_state = CUDA(running_state['state'])
             # print(img_state.shape)
-            act_logits = model.policy_network(model.causal_feature_encoder(img_state))                
+            if image: 
+                act_logits = model.policy_network(model.causal_feature_encoder(img_state))                
+            else: 
+                act_logits = model.policy_network(model.causal_feature_encoder(pri_state))                
+                
             act = act_logits[:, :2].detach()
             
             running_state, running_reward, done, info = env.step(act.cpu().numpy())

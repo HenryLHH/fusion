@@ -220,7 +220,7 @@ class BisimDataset_Spurious(Dataset):
 
 
 class Dataset_EBM(Dataset):
-    def __init__(self, file_path, num_files, offset=0, noise_scale=0, balanced=False):
+    def __init__(self, file_path, num_files, offset=0, noise_scale=0, balanced=False, image=True):
         assert isinstance(noise_scale, int), 'noise scale should be an integer'
 
         self.num_files = num_files
@@ -229,7 +229,9 @@ class Dataset_EBM(Dataset):
         self.noise_scale = noise_scale
         
         self.balanced = balanced
-        self.transform = transforms.Compose([transforms.Resize((28, 28)), transforms.PILToTensor()])
+        self.image = image
+        if image: 
+            self.transform = transforms.Compose([transforms.Resize((28, 28)), transforms.PILToTensor()])
 
 
     def __getitem__(self, index): 
@@ -237,18 +239,22 @@ class Dataset_EBM(Dataset):
         data = np.load(os.path.join(self.file_path, 'data/')+str(index+self.offset)+'.npy', allow_pickle=True)
         label = np.load(os.path.join(self.file_path, 'label/')+str(index+self.offset)+'.npy', allow_pickle=True).item() # dict
 
-
-        image_state, action, image_state_next = data[0]
-        image_state = image_state[:3].transpose(1, 2, 0)
-        im = Image.fromarray(np.array(image_state*255, dtype=np.uint8))
-        im = self.transform(im) / 255.
-        return im
-    
+        if self.image: 
+            image_state, action, image_state_next = data[0]
+            image_state = image_state[:3].transpose(1, 2, 0)
+            im = Image.fromarray(np.array(image_state*255, dtype=np.uint8))
+            im = self.transform(im) / 255.
+            return im
+        else: 
+            state, action, state_next = data[2]
+            return state
+                
     def __len__(self):
         return self.num_files
 
+
 class BisimDataset_Fusion_Spurious(Dataset):
-    def __init__(self, file_path, num_files, offset=0, noise_scale=0, balanced=False):
+    def __init__(self, file_path, num_files, offset=0, noise_scale=0, balanced=False, image=False):
         assert isinstance(noise_scale, int), 'noise scale should be an integer'
 
         self.num_files = num_files

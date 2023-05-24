@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from ssr.agent.icil.mine_network import MineNetwork
 from ssr.agent.icil.model import MnistEnergyNN
+from ssr.agent.icil.energy_model import EnergyModelNetworkMLP
 
 def CUDA(x):
     if isinstance(x, np.ndarray):
@@ -23,47 +24,6 @@ def reparameterize(mu, logstd):
     std = torch.exp(2*logstd)
     eps = torch.randn_like(std)
     return mu + eps * std
-
-
-class View(nn.Module):
-    def __init__(self, size):
-        super(View, self).__init__()
-        self.size = size
-
-    def forward(self, tensor):
-        return tensor.view(self.size)
-
-
-def build_encoder_net(z_dim, nc):
-
-    encoder = nn.Sequential(
-            nn.Conv2d(nc, 16, kernel_size=8, stride=4, padding=0), # B, 16, 20, 20
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=0), # B, 32, 9, 9
-            nn.ReLU(),
-            nn.Conv2d(32, 256, kernel_size=11, stride=1, padding=1), # B, 256, 2, 2
-            # nn.Conv2d(64, 64, 4, 1), # B, 64,  4, 4
-            nn.Tanh(),
-            View((-1, 256)), 
-            nn.Linear(256, z_dim),             # B, z_dim*2        
-        )
-    
-    return encoder
-
-def build_decoder_net(z_dim, nc):
-    
-    decoder = nn.Sequential(
-            nn.Linear(z_dim, 256),               # B, 256
-            View((-1, 256, 1, 1)),               # B, 256,  1,  1
-            nn.Tanh(),
-            nn.ConvTranspose2d(256, 32, 11, 1, 1),      # B,  64,  8, 8
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, 16, 4, 2, 0),      # B,  64,  8, 8
-            nn.ReLU(True),
-            nn.ConvTranspose2d(16, nc, 8, 4, 0),  # B, nc, 64, 64
-        )
-    
-    return decoder
 
 class StudentNetwork(nn.Module):
     def __init__(self, in_dim, out_dim, width):
@@ -88,9 +48,14 @@ class StudentNetwork(nn.Module):
 class FeaturesEncoder(nn.Module):
     def __init__(self, input_size, representation_size, width):
         super().__init__()
-
-        self.layers = build_encoder_net(z_dim=representation_size, nc=input_size)
         
+        self.layers = nn.Sequential(
+            nn.Linear(input_size, width), 
+            nn.Linear(width, width), 
+            nn.Linear(width, representation_size),
+        )
+        # self.layers = build_encoder_net(z_dim=representation_size, nc=input_size)
+    
     def forward(self, x):
         return self.layers(x)
 
@@ -116,14 +81,14 @@ class ObservationsDecoder(nn.Module):
     def __init__(self, representation_size, out_size, width):
         super().__init__()
 
-        # self.layers = nn.Sequential(
-        #     nn.Linear(representation_size * 2, width),
-        #     nn.ELU(),
-        #     nn.Linear(width, width),
-        #     nn.ELU(),
-        #     nn.Linear(width, out_size),
-        # ).cuda()
-        self.layers = build_decoder_net(representation_size*2, nc=out_size)
+        self.layers = nn.Sequential(
+            nn.Linear(representation_size * 2, width),
+            nn.ELU(),
+            nn.Linear(width, width),
+            nn.ELU(),
+            nn.Linear(width, out_size),
+        )
+        # self.layers = build_decoder_net(representation_size*2, nc=out_size)
 
     def forward(self, x, y):
         input = torch.cat((x, y), dim=-1)
@@ -160,8 +125,9 @@ class ICIL(nn.Module):
         self.noise_features_decoders = FeaturesDecoder(action_size=action_dim, representation_size=hidden_dim_input, width=hidden_dim)
 
         self.mine_network = MineNetwork(x_dim=hidden_dim_input, z_dim=hidden_dim_input, width=hidden_dim)
-        self.energy_model = MnistEnergyNN()
-        self.energy_model.load_state_dict(torch.load('/home/haohong/0_causal_drive/ssr-rl/ssr/agent/icil/generative_ebm/ckpt/checkpoint_40000.pt'))
+        self.energy_model =  EnergyModelNetworkMLP(in_dim=state_dim, out_dim=1, l_hidden=(hidden_dim, hidden_dim), 
+                                                   activation='relu', out_activation='linear')
+        self.energy_model.load_state_dict(torch.load('/home/haohong/0_causal_drive/ssr-rl/ssr/agent/icil/ckpt_state/checkpoint_01000.pt'))
         
         self.device = "cuda"
 

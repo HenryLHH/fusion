@@ -47,6 +47,8 @@ def get_train_parser():
     parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
     parser.add_argument("--env_num", type=int, default=50, help="checkpoint to load")
     parser.add_argument("--hidden", type=int, default=64, help='hidden dim of DT')
+    parser.add_argument("--dynamics", action="store_true", help='train world dynamics')
+    parser.add_argument("--value", action="store_true", help='train value model')
     
 
     return parser
@@ -60,8 +62,8 @@ if __name__ == '__main__':
         model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
         model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
         print('model loaded')
-        results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=3., 
-                                                    rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
+        results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=300, ctg_target=0., 
+                                                    rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000, use_value_pred=args.value)
     elif args.method == 'ssr_pred': 
         model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
         model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
@@ -69,7 +71,7 @@ if __name__ == '__main__':
         model_est.load_state_dict(torch.load('checkpoint/state_est.pt'))
         
         print('model loaded')
-        results = evaluate_on_env_structure_pred(model, model_est, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=3., 
+        results = evaluate_on_env_structure_pred(model, model_est, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=0., 
                                                     rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000)
 
     elif args.method == 'icil': 
@@ -103,6 +105,3 @@ if __name__ == '__main__':
         )
     print(log_str)
     env.close()
-    
-    
-    
