@@ -20,8 +20,7 @@ def softmax(x):
 def flatten(_list):
     return [item for sublist in _list for item in sublist]
 
-def reparameterize(mu, logstd):
-    std = torch.exp(2*logstd)
+def reparameterize(mu, std):
     eps = torch.randn_like(std)
     return mu + eps * std
 
@@ -127,7 +126,7 @@ class ICIL(nn.Module):
         self.mine_network = MineNetwork(x_dim=hidden_dim_input, z_dim=hidden_dim_input, width=hidden_dim)
         self.energy_model =  EnergyModelNetworkMLP(in_dim=state_dim, out_dim=1, l_hidden=(hidden_dim, hidden_dim), 
                                                    activation='relu', out_activation='linear')
-        self.energy_model.load_state_dict(torch.load('/home/haohong/0_causal_drive/ssr-rl/ssr/agent/icil/ckpt_state/checkpoint_01000.pt'))
+        self.energy_model.load_state_dict(torch.load('/home/haohong/0_causal_drive/ssr-rl/ssr/agent/icil/ckpt_state/checkpoint_00200.pt'))
         
         self.device = "cuda"
 
@@ -147,6 +146,8 @@ class ICIL(nn.Module):
             list(self.policy_network.parameters()), 
             lr=lr
         )
+        self.std_min = 1e-1
+        self.std_max = 1.
         # self.pure_opt = optim.Adam(list(self.causal_feature_encoder.parameters())
         #     + list(self.causal_feature_decoder.parameters())
         #     + list(self.observation_decoder.parameters()), lr=lr)
@@ -162,7 +163,7 @@ class ICIL(nn.Module):
 
         act_logits = self.policy_network(causal_rep)
         if not deterministic: 
-            act_pred = reparameterize(act_logits[:, :2], act_logits[:, 2:])
+            act_pred = reparameterize(act_logits[:, :2], torch.sigmoid(act_logits[:, 2:])*(self.std_max-self.std_min)+self.std_min)
         else:
             act_pred = act_logits[:, :2]
         

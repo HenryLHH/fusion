@@ -292,12 +292,12 @@ class BisimEncoder_Head_BP_Actor(nn.Module):
         self.causal = causal
         # self.state_encoder = StateEncoder(obs_dim=35, hidden_dim=hidden_dim)
         if causal:
-            self.action_encoder = ImageStateEncoder(hidden_dim=hidden_dim, nc=5, output_dim=output_dim)
+            self.action_encoder_ego = ImageStateEncoder(hidden_dim=hidden_dim, nc=2, output_dim=19)
+            self.action_encoder_surrounding = ImageStateEncoder(hidden_dim=hidden_dim, nc=4, output_dim=16)
             
         else:
             self.action_encoder = ImageStateEncoder_NonCausal(hidden_dim=hidden_dim, nc=5, output_dim=output_dim)
-    
-
+        
         self.criteria = nn.MSELoss(reduction='mean')        
         
         # self.opt_actor = optim.Adam(self.parameters(), lr=1e-4, betas=(0.9, 0.999))
@@ -309,15 +309,25 @@ class BisimEncoder_Head_BP_Actor(nn.Module):
         '''
             Get the cost-aware Bisimulation Loss for the representation
         '''
+        if self.causal: 
+            if not deterministic: 
+                state_pred_ego, _, _ = self.action_encoder_ego(img[:, :2, :, :])
+                state_pred_context, _, _ = self.action_encoder_surrounding(img[:, 1:, :, :])
+                
+            else:
+                _, state_pred_ego, _ = self.action_encoder_ego(img[:, :2, :, :])
+                _, state_pred_context, _ = self.action_encoder_surrounding(img[:, 1:, :, :])
+            state_pred = torch.cat([state_pred_ego, state_pred_context], axis=1)
+            
+        else: 
+            if not deterministic: 
+                state_pred, _, _ = self.action_encoder(img)
+            else:
+                _, state_pred, _ = self.action_encoder(img)
 
-        if not deterministic: 
-            z_act, _, _ = self.action_encoder(img)
-        else:
-            _, z_act, _ = self.action_encoder(img)
-
-        loss_state = self.criteria(z_act, state)
+        loss_state = self.criteria(state_pred, state)
         
-        return z_act, loss_state
+        return state_pred, loss_state
     
 
 class ICILEncoder_Head_BP_Actor(nn.Module):

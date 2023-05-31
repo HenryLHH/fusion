@@ -129,7 +129,7 @@ if __name__ == '__main__':
     print(model)
         
     optimizer = optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.999))
-
+    
     best_val_loss = 1e9
     best_succ_rate = -1
     log_dict = {'reward': [], 
@@ -163,7 +163,7 @@ if __name__ == '__main__':
                 policy_loss, next_state_pred_loss, next_state_energy_loss, mi_loss, mine_loss = \
                     model(state, action, state_next)
                 
-            loss_act = policy_loss + next_state_energy_loss #  loss_est + #  loss_est + loss_act # + loss_cls + loss_bisim + loss_bisim_cost # loss_state_est + 0.1*kl_loss + loss_bisim_cost
+            loss_act = policy_loss + 1e-5*next_state_energy_loss #  loss_est + #  loss_est + loss_act # + loss_cls + loss_bisim + loss_bisim_cost # loss_state_est + 0.1*kl_loss + loss_bisim_cost
             loss_rep = next_state_pred_loss + mi_loss
             # loss += 0.0001 * loss_norm
             model.policy_opt.zero_grad()

@@ -183,7 +183,7 @@ if __name__ == '__main__':
     batch_size = 128
     replay_buffer = deque(maxlen=1000)
 
-    energy_nn = CUDA(EnergyModelNetworkMLP(in_dim=35, out_dim=1, l_hidden=(64, 64), activation='relu', out_activation='linear'))
+    energy_nn = CUDA(EnergyModelNetworkMLP(in_dim=35, out_dim=1, l_hidden=(64, 64), activation='tanh', out_activation='tanh'))
     optimizer = optim.Adam(energy_nn.parameters())
     initialize_replay_buffer(replay_buffer, n=batch_size)
     # data_loader = torch.utils.data.DataLoader(
