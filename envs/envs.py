@@ -1,6 +1,6 @@
 from typing import Union, Dict, AnyStr, Optional, Tuple
 
-from metadrive import TopDownMetaDrive
+from metadrive.envs.top_down_env import TopDownMetaDrive
 from metadrive.obs.state_obs import StateObservation, LidarStateObservation
 from metadrive.utils import Config
 from metadrive.constants import DEFAULT_AGENT, TerminationState
@@ -8,7 +8,6 @@ from metadrive.utils.math_utils import norm, clip
 # from metadrive.obs.top_down_obs import TopDownObservation
 from metadrive.obs.top_down_obs_multi_channel import TopDownMultiChannel
 from metadrive.obs.observation_base import ObservationBase
-from metadrive.component.vehicle_module.navigation import Navigation
 from metadrive.manager.traffic_manager import TrafficMode
 
 
@@ -72,10 +71,15 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
             "accident_prob": 0.0,
             "safe_rl_env": True,
             "crash_vehicle_cost": 1,
+            "crash_vehicle_penalty": 0,
             "crash_object_cost": 1,
+            "crash_object_penalty": 0, 
             "out_of_road_cost": 1.,  # only give penalty for out_of_road
+            "out_of_road_penalty": 0,
             "use_lateral": False,
             "distance": 20, # same with offline data
+            "obs_noise_scale": 0.0,
+            "idm_target_speed": 30,
         })
         return config
     
@@ -151,7 +155,7 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
             # self.state_obs = StateObservation(self.config["vehicle_config"])
             # true_state = self.state_obs.observe(vehicle)            
         
-        current_lane = vehicle.navigation.get_current_lane(vehicle)[1]
+        current_lane = vehicle.navigation._get_current_lane(vehicle)[1]
         done_info.update({"true_state": lidar_state[:35], 
                           "lidar_state": lidar_state[35:],
                           'current_lane': current_lane})
@@ -176,7 +180,11 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
                         done = False
                     else:
                         done = True
-        
+
+            # overwrite any potential change when it needs to be truncated
+            if done_info[TerminationState.MAX_STEP]: 
+                done = True
+
         return done, done_info
 
     def step(self, actions: Union[np.ndarray, Dict[AnyStr, np.ndarray]]):
@@ -189,12 +197,17 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
         lidar_dist = np.min(i['lidar_state'])
         # cost_continuous = max(0, np.exp(max(0, 0.4-lidar_dist))-np.exp(max(0, 0.4-self.last_dist)))
         cost_continuous = max(0, 0.5-lidar_dist)**2
-        
+        i['proximity_cost'] = 1e-1*max(0, 0.4-lidar_dist)**2
+        i["velocity_cost"] = max(0, 1e-2*(i["velocity"]-15.))
+        # print("v: ", i['velocity'])
+        i['cost'] = i['cost_sparse'] + i['velocity_cost']
         self.last_dist = lidar_dist
-        i.update({'cost': cost_continuous}) # i['cost_sparse']}) # cost_continuous
 
-
+        i['last_state'] = self.last_state["state"]
+        i['last_lidar'] = self.last_state["lidar"]
         o.update({'state': i['true_state'], 'lidar': i['lidar_state']})
+        self.last_state = o
+        
         self.expert_action = self.expert.get_action(o['state'])
 
         o.update({'expert': np.clip(self.expert_action, -np.ones(2,), np.ones(2))})
@@ -225,6 +238,7 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
         o.update({'state': self.done_function(DEFAULT_AGENT)[1]['true_state'], 
                   'lidar': lidar_state, 
                   'expert': self.expert_action})
+        self.last_state = o
 
         return o
 

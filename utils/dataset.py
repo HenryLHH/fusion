@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import glob
 
 from typing import List
 
@@ -254,10 +255,17 @@ class Dataset_EBM(Dataset):
 
 
 class BisimDataset_Fusion_Spurious(Dataset):
-    def __init__(self, file_path, num_files, offset=0, noise_scale=0, balanced=False, image=False):
+    def __init__(self, file_path, num_files=None, offset=0, noise_scale=0, balanced=False, image=False):
         assert isinstance(noise_scale, int), 'noise scale should be an integer'
 
-        self.num_files = num_files
+        # self.num_files = num_files
+        print(file_path)
+        if num_files is None: 
+            self.num_files = len(glob.glob(os.path.join(file_path, "label", "*")))
+        else: 
+            self.num_files = num_files
+        print("Num Files: ", self.num_files)
+        
         self.file_path = file_path
         self.offset = offset
         self.noise_scale = noise_scale
@@ -289,10 +297,10 @@ class BisimDataset_Fusion_Spurious(Dataset):
         # apply spurious noise
         noise_patch = torch.zeros_like(image_state[0])
         # x_start_idx, y_start_idx = torch.randint(0, 40, (1,))[0], torch.randint(0, 40, (1,))[0] # torch.round((action + 1.) / 2. * image_state.shape[1]).int()
-        x_start_idx, y_start_idx = (40*(action+1)//2).int()
-        noise_patch[x_start_idx: x_start_idx+self.noise_scale, y_start_idx: y_start_idx+self.noise_scale] = 1.
-        image_state[-1, :, :] += noise_patch
-        image_state_next[-1, :, :] += noise_patch
+        # x_start_idx, y_start_idx = (40*(action+1)//2).int()
+        # noise_patch[x_start_idx: x_start_idx+self.noise_scale, y_start_idx: y_start_idx+self.noise_scale] = 1.
+        # image_state[-1, :, :] += noise_patch
+        # image_state_next[-1, :, :] += noise_patch
 
         image_state = torch.clamp(image_state, torch.zeros_like(image_state), torch.ones_like(image_state))
         image_state_next = torch.clamp(image_state_next, torch.zeros_like(image_state_next), torch.ones_like(image_state_next))
@@ -324,10 +332,13 @@ class BisimDataset_Fusion_Spurious(Dataset):
 
 
 class TransitionDataset_Baselines(IterableDataset):
-    def __init__(self, file_path, num_files, offset=0, noise_scale=0, balanced=False, image=False):
+    def __init__(self, file_path, num_files=None, offset=0, noise_scale=0, balanced=False, image=False):
         assert isinstance(noise_scale, int), 'noise scale should be an integer'
-
-        self.num_files = num_files
+        if num_files is None: 
+            self.num_files = len(glob.glob(os.path.join(file_path, "label", "*")))
+        else: 
+            self.num_files = num_files
+        print("Num Files: ", self.num_files)
         self.file_path = file_path
         self.offset = offset
         self.noise_scale = noise_scale

@@ -5,7 +5,6 @@ from metadrive.constants import HELP_MESSAGE
 import matplotlib.pyplot as plt
 
 from metadrive.component.vehicle_module.PID_controller import PIDController, Target
-from metadrive.component.blocks.first_block import FirstPGBlock
 
 import numpy as np
 import time as time

@@ -12,29 +12,58 @@ import yaml
 
 from envs.envs import State_TopDownMetaDriveEnv
 from metadrive.manager.traffic_manager import TrafficMode
+from metadrive.component.pgblock.first_block import FirstPGBlock
 
 
 def make_envs(): 
     config = dict(
-        environment_num=50, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
         start_seed=0, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
         safe_rl_env=True,
         random_traffic=False,
         accident_prob=0,
+        distance=20,
         vehicle_config=dict(lidar=dict(
             num_lasers=240,
             distance=50,
             num_others=4
         )),
+        map_config=dict(type="block_sequence", config="TRO"), 
         traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
-        traffic_mode=TrafficMode.Hybrid,
-        horizon=1000,
+        traffic_mode=TrafficMode.Trigger,
+        horizon=999,
         # IDM_agent=True,
         # resolution_size=64,
         # generalized_blocks=tune.grid_search([['X', 'T']])
     )
     return State_TopDownMetaDriveEnv(config)
+
+def make_envs_small_data(): 
+    config = dict(
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        start_seed=0, #tune.grid_search([0, 1000]),
+        frame_stack=3, # TODO: debug
+        safe_rl_env=True,
+        random_traffic=False,
+        accident_prob=0,
+        vehicle_config={"vehicle_model": "default",
+            "spawn_lane_index": (FirstPGBlock.NODE_1, FirstPGBlock.NODE_2, 1),
+            "lidar": dict(num_lasers=240, distance=50, num_others=4, gaussian_noise=0.0, dropout_prob=0.0),
+        },
+        map_config={
+                "type": "block_sequence", 
+                "config": "X" 
+        },
+        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
+        traffic_mode=TrafficMode.Hybrid,
+        horizon=999,
+        # IDM_agent=True,
+        # resolution_size=64,
+        # generalized_blocks=tune.grid_search([['X', 'T']])
+    )
+    return State_TopDownMetaDriveEnv(config)
+
 
 def seed_all(seed=1029, others: Optional[list] = None) -> None:
     """Fix the seeds of `random`, `numpy`, `torch` and the input `others` object.

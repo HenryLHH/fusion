@@ -16,7 +16,7 @@ def np_move_avg(a, n, mode="same"):
     return np.convolve(a, np.ones((n,))/n, mode=mode)
 
 args = get_train_parser().parse_args()
-filenames = glob.glob('log/'+args.model) + glob.glob('log/icil/icil_state*')
+filenames = glob.glob('log/'+args.model) # + glob.glob('log/icil/icil_state*')
 print(filenames)
 data = [np.load(f, allow_pickle=True) for f in filenames]
 

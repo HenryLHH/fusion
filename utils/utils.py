@@ -2,7 +2,10 @@ import torch
 import numpy as np
 
 def CPU(x):
-    return x.detach().cpu().numpy()
+    # if isinstance(x, torch.Tensor):
+    #     return x.detach().cpu().numpy()
+    # else: 
+    return x.cpu()
 
 def CUDA(x):
     if isinstance(x, np.ndarray):

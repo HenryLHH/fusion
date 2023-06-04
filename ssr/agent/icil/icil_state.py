@@ -126,7 +126,7 @@ class ICIL(nn.Module):
         self.mine_network = MineNetwork(x_dim=hidden_dim_input, z_dim=hidden_dim_input, width=hidden_dim)
         self.energy_model =  EnergyModelNetworkMLP(in_dim=state_dim, out_dim=1, l_hidden=(hidden_dim, hidden_dim), 
                                                    activation='relu', out_activation='linear')
-        self.energy_model.load_state_dict(torch.load('/home/haohong/0_causal_drive/ssr-rl/ssr/agent/icil/ckpt_state/checkpoint_00200.pt'))
+        # self.energy_model.load_state_dict(torch.load('/home/haohong/0_causal_drive/ssr-rl/ssr/agent/icil/ckpt_state/checkpoint_00200.pt'))
         
         self.device = "cuda"
 
