@@ -20,7 +20,7 @@ from ssr.agent.bearl.bearl import BEARL, BEARLTrainer
 from ssr.configs.bearl_configs import BEARLTrainConfig, BEARL_DEFAULT_CONFIG
 
 from fsrl.utils.exp_util import auto_name, seed_all
-from utils.exp_utils import make_envs
+from utils.exp_utils import make_envs, make_envs_single
 
 NUM_FILES = 390000
 
@@ -47,10 +47,13 @@ def train(args: BEARLTrainConfig):
     logger.save_config(cfg, verbose=args.verbose)
 
     # initialize environment
-    env = SubprocVecEnv([make_envs for _ in range(16)])
+    if args.single_env: 
+        env = SubprocVecEnv([lambda: make_envs_single(i) for i in range(16)], start_method="spawn")    
+    else: 
+        env = SubprocVecEnv([make_envs for _ in range(16)])
 
     # pre-process offline dataset
-    data_path = '/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics_post'
+    data_path = os.path.join("dataset", args.dataset)
 
     # model & optimizer setup
     model = BEARL(
@@ -94,7 +97,7 @@ def train(args: BEARLTrainConfig):
                            device=args.device)
 
     # initialize pytorch dataloader
-    dataset = TransitionDataset_Baselines(data_path, num_files=NUM_FILES)
+    dataset = TransitionDataset_Baselines(data_path)
     
     trainloader = DataLoader(
         dataset,

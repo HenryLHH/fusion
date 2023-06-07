@@ -26,9 +26,9 @@ class BCQLTrainConfig:
     threads: int = 4
     reward_scale: float = 0.1
     cost_scale: float = 1
-    actor_lr: float = 0.001
-    critic_lr: float = 0.001
-    vae_lr: float = 0.001
+    actor_lr: float = 0.0001
+    critic_lr: float = 0.0001
+    vae_lr: float = 0.0001
     phi: float = 0.05
     lmbda: float = 0.75
     beta: float = 0.5
@@ -48,8 +48,9 @@ class BCQLTrainConfig:
     num_qc: int = 2
     PID: List[float] = field(default=[0.1, 0.003, 0.001], is_mutable=True)
     # evaluation params
-    eval_episodes: int = 10
+    eval_episodes: int = 50
     eval_every: int = 2500
+    single_env: bool = False
 
 
 @dataclass

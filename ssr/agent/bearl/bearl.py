@@ -247,7 +247,7 @@ class BEARL(nn.Module):
             multiplier = self.controller.control(qc_val).detach()
         qc_penalty = ((qc_val - self.qc_thres) * multiplier).mean()
         q_val = torch.min(q_val1, q_val2)
-
+        
         if self.n_train_steps >= self.start_update_policy_step:
             loss_actor = (-q_val + self.log_alpha.exp() *
                           (mmd_loss - self.target_mmd_thresh)).mean()

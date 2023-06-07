@@ -10,46 +10,59 @@ from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 import torch.optim as optim
 
-from encoder import ImageStateEncoder, ImageStateEncoder_NonCausal, StateEncoder
-from dataset import BC_Dataset
+from ssr.agent.DAgger.encoder import ImageStateEncoder, ImageStateEncoder_NonCausal, StateEncoder
 
 
 class BC_Agent(nn.Module):
-    def __init__(self, hidden_dim=64, action_dim=2) -> None:
+    def __init__(self, hidden_dim=64, action_dim=2, use_img=False) -> None:
         super().__init__()
         self.action_dim = action_dim
-        self.image_encoder = ImageStateEncoder(hidden_dim=hidden_dim, nc=3, output_dim=action_dim)
-        self.state_encoder = StateEncoder(hidden_dim=hidden_dim, output_dim=action_dim)
+        if use_img: 
+            self.image_encoder = ImageStateEncoder(hidden_dim=hidden_dim, nc=5, output_dim=hidden_dim//2)
+        else: 
+            self.state_encoder = StateEncoder(state_dim=35, hidden_dim=hidden_dim, output_dim=hidden_dim//2)
         
+        self.lidar_encoder = StateEncoder(state_dim=240, hidden_dim=hidden_dim, output_dim=hidden_dim//2)
+        self.use_img = use_img
+        self.aggregate = nn.Sequential(nn.Linear(hidden_dim*2, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, action_dim*2))
+        self.criteria = nn.MSELoss()
+        self.min_std, self.max_std = 1e-1, 1.
 
-    def forward(self, s_image, s_state, random=False):
-        _, mu_image, std_image = self.image_encoder(s_image)
-        mu_state, std_state = self.state_encoder(s_state)
-        
-        dist_image = D.Normal(mu_image, std_image)
-        dist_state = D.Normal(mu_state, std_state)
-        mu = torch.cat([mu_image.unsqueeze(1), mu_state.unsqueeze(1)], dim=1)
-        # std = torch.cat([std_img.unsqueeze(1), std_state.unsqueeze(1)], dim=1)
-        std = torch.cat([std_image.unsqueeze(1), std_state.unsqueeze(1)], dim=1)
-        batch_size = s_state.shape[0]
-        # Construct Gaussian Mixture Modle in 2D consisting of 5 equally
-        # weighted bivariate normal distributions
-        # mix = D.Categorical(CUDA(torch.ones(batch_size, self.action_dim)))
-        # comp = D.Independent(D.Normal(
-        #         mu, std), 1)
-        # gmm = D.MixtureSameFamily(mix, comp)
-        
-        if random:
-            if np.random.rand() < 0.5:
-                action = dist_image.rsample()
-            else:
-                action = dist_state.rsample()
+    def forward(self, state, lidar, action_expert, deterministic=False):
+        batch_size = state.shape[0]
+
+        if self.use_img: 
+            z_state = self.image_encoder(state)
+        else: 
+            z_state = self.state_encoder(state)
+
+        z_lidar = self.lidar_encoder(lidar)
+        z_agg = torch.cat([z_state, z_lidar], axis=1)
+        z_agg = self.aggregate(z_agg)
+
+        mu_act, std_act = z_agg[:, :self.action_dim], self.min_std + (self.max_std-self.min_std)*torch.sigmoid(z_agg[:, self.action_dim:])
+        dist = D.Normal(mu_act, std_act)
+
+        if not deterministic:
+            action = dist.rsample()
         else:
-            idx = torch.as_tensor(std_image.max(-1)[0] > std_state.max(-1)[0], dtype=torch.long)
-            idx_range = torch.arange(0, batch_size, 1)
-            action = mu[idx_range, idx, :]
+            # idx = torch.as_tensor(std_image.max(-1)[0] > std_state.max(-1)[0], dtype=torch.long)
+            # idx_range = torch.arange(0, batch_size, 1)
+            # action = mu[idx_range, idx, :]
+            action = mu_act
 
+        policy_loss = self.criteria(action, action_expert)
         # print(action.shape)
-
-        return action, std
+        return action, policy_loss
     
+    def act(self, state, lidar): 
+        if self.use_img: 
+            z_state = self.image_encoder(state)
+        else: 
+            z_state = self.state_encoder(state)
+        
+        z_lidar = self.lidar_encoder(lidar)
+        z_agg = torch.cat([z_state, z_lidar], axis=1)
+        action = z_agg[:, :self.action_dim]
+
+        return action

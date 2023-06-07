@@ -9,7 +9,7 @@ import numpy as np
 import pyrallis
 import torch
 from torch.utils.data import DataLoader
-from tqdm.auto import trange  # noqa
+from tqdm.auto import trange  # nosuqa
 from fsrl.utils import WandbLogger
 
 from utils.dataset import TransitionDataset_Baselines
@@ -17,7 +17,7 @@ from ssr.agent.bcql.bcql import BCQL, BCQLTrainer
 from fsrl.utils.exp_util import auto_name, seed_all
 from ssr.configs.bcql_configs import BCQLTrainConfig, BCQL_DEFAULT_CONFIG
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from utils.exp_utils import make_envs
+from utils.exp_utils import make_envs, make_envs_single
 
 NUM_FILES = 390000
 
@@ -43,9 +43,12 @@ def train(args: BCQLTrainConfig):
 
     # initialize environment
     # pre-process offline dataset
-    env = SubprocVecEnv([make_envs for _ in range(16)])
-    data_path = '/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics_post'
+    if args.single_env: 
+        env = SubprocVecEnv([lambda: make_envs_single(i) for i in range(16)], start_method="spawn")    
+    else: 
+        env = SubprocVecEnv([make_envs for _ in range(16)])    
     
+    data_path = os.path.join("dataset", args.dataset)
 
     # model & optimizer setup
     model = BCQL(
@@ -87,7 +90,7 @@ def train(args: BCQLTrainConfig):
                           device=args.device)
 
     # initialize pytorch dataloader
-    dataset = TransitionDataset_Baselines(data_path, num_files=NUM_FILES)
+    dataset = TransitionDataset_Baselines(data_path)
 
     trainloader = DataLoader(
         dataset,

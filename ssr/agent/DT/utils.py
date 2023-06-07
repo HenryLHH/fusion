@@ -247,7 +247,6 @@ def evaluate_on_env_structure(model, device, context_len, env, rtg_target, ctg_t
             act = act_preds[:, -1].detach()
             rtg_pred = rtg_pred[:, -1].detach()
             ctg_pred = ctg_pred[:, -1].detach()
-
             
             running_state, running_reward, done, info = env.step(act.cpu().numpy())
             # add action in placeholder

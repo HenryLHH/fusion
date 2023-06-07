@@ -12,7 +12,7 @@ import torch.optim as optim
 
 from transition_dynamics.dataset import BC_Dataset
 
-from .bc_model import BC_Agent
+from ssr.agent.DAgger.bc_model import BC_Agent
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  

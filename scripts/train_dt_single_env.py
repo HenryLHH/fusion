@@ -1,3 +1,4 @@
+import os
 import numpy as np
 
 import torch
@@ -9,7 +10,8 @@ from torch.utils.data import Dataset, DataLoader
 from ssr.agent.DT.model import (
     DecisionTransformer, 
     SafeDecisionTransformer, 
-    SafeDecisionTransformer_Structure
+    SafeDecisionTransformer_Structure,
+    SafeDecisionTransformer_StructureAgg
 )
 from ssr.agent.DT.utils import (
     SafeDTTrajectoryDataset, 
@@ -27,7 +29,6 @@ from envs.envs import State_TopDownMetaDriveEnv
 from tqdm import trange
 import argparse
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from utils.exp_utils import make_envs
 
 NUM_EPOCHS = 200
 num_updates_per_iter = 500
@@ -36,13 +37,64 @@ wt_decay = 1e-4
 warmup_steps = 10000
 decay_steps = 25000
 
+def make_envs(): 
+    config = dict(
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        start_seed=0, #tune.grid_search([0, 1000]),
+        frame_stack=3, # TODO: debug
+        safe_rl_env=True,
+        random_traffic=False,
+        accident_prob=0,
+        distance=20,
+        vehicle_config=dict(lidar=dict(
+            num_lasers=240,
+            distance=50,
+            num_others=4
+        )),
+        map_config=dict(type="block_sequence", config="TRO"), 
+        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
+        traffic_mode=TrafficMode.Trigger,
+        horizon=args.horizon-1,
+    )
+    return State_TopDownMetaDriveEnv(config)
+
+block_list=["S", "T", "R", "O"]
+
+def make_envs_single(block_id=0): 
+    idx = int(block_id // 4)
+    block_type=block_list[idx]
+    config = dict(
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        start_seed=0, #tune.grid_search([0, 1000]),
+        frame_stack=3, # TODO: debug
+        safe_rl_env=True,
+        random_traffic=False,
+        accident_prob=0,
+        distance=20,
+        vehicle_config=dict(lidar=dict(
+            num_lasers=240,
+            distance=50,
+            num_others=4
+        )),
+        map_config=dict(type="block_sequence", config=block_type), 
+        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
+        traffic_mode=TrafficMode.Hybrid,
+        horizon=args.horizon-1,
+    )
+    return State_TopDownMetaDriveEnv(config)
+
 
 def get_train_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
+    parser.add_argument("--dataset", type=str, default="dataset_dafault",  help='path to the dataset')
+
     parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
     parser.add_argument("--context", type=int, default=30, help='context len of DT')
     parser.add_argument("--hidden", type=int, default=64, help='hidden dim of DT')
+    parser.add_argument("--num_workers", type=int, default=16, help='number of workers for parallel evaluation')
+    parser.add_argument("--horizon", type=int, default=1000, help='horizon of a task')
+
     parser.add_argument("--decay", type=float, default=1e-4, help='weight decay of the model')
     parser.add_argument("--rtg_scale", type=float, default=40.0, help='scale of reward to go')
     parser.add_argument("--ctg_scale", type=float, default=10.0, help='scale of cost to go')
@@ -50,24 +102,30 @@ def get_train_parser():
     parser.add_argument("--continuous", action="store_true")
     parser.add_argument("--dynamics", action="store_true", help='train world dynamics')
     parser.add_argument("--value", action="store_true", help='train value predictors')
+    parser.add_argument("--single_env", action="store_true", help='use single block envs')
     
     return parser
 
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
+    os.makedirs("log/", exist_ok=True)
+    os.makedirs("checkpoint/", exist_ok=True)
+    # os.makedirs(os.path.join("log/", args.model), exist_ok=True)
+    os.makedirs(os.path.join("checkpoint/", args.model), exist_ok=True)
+
     if args.continuous: 
-        train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics', 
-                                    num_traj=959, context_len=args.context, rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale)
+        train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path=os.path.join('./dataset', args.dataset), 
+                                    context_len=args.context, rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale)
     else:
-        train_set = SafeDTTrajectoryDataset_Structure(dataset_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics', 
-                                    num_traj=959, context_len=args.context, rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale)
+        train_set = SafeDTTrajectoryDataset_Structure(dataset_path=os.path.join('./dataset', args.dataset), 
+                                    num_traj=200, context_len=args.context, rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale)
     # train_set = SafeDTTrajectoryDataset_Structure_Cont(dataset_path='/home/haohong/0_causal_drive/baselines_clean/data/data_bisim_cost_continuous', 
     #                             num_traj=1056, context_len=30)
-    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=4)
+    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=args.num_workers)
     data_iter = iter(train_dataloader)
     
     model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=args.context, 
-                                                   n_heads=1, drop_p=0.1, max_timestep=1000))
+                                                   n_heads=1, drop_p=0.1, max_timestep=args.horizon))
     optimizer = torch.optim.AdamW(
 					model.parameters(), 
 					lr=lr, 
@@ -99,7 +157,12 @@ if __name__ == '__main__':
     total_updates = 0
     
     log_dict = {'reward': [], 'cost': [], 'success_rate': [], 'oor_rate': [], 'crash_rate': [], 'max_step': []}
-    env = SubprocVecEnv([make_envs for _ in range(16)])
+
+    if args.single_env: 
+        env = SubprocVecEnv([lambda: make_envs_single(i) for i in range(16)], start_method="spawn")    
+    else: 
+        env = SubprocVecEnv([make_envs for _ in range(16)], start_method="spawn")
+    
     best_succ = 0.
     rtg_loss, ctg_loss = CUDA(torch.tensor(0.)), CUDA(torch.tensor(0.))
     for e in range(NUM_EPOCHS): 
@@ -180,10 +243,10 @@ if __name__ == '__main__':
 
         if args.continuous: 
             results = evaluate_on_env_structure_cont(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=300, ctg_target=2., 
-                                                rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=1000, use_value_pred=args.value)
+                                                rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=args.horizon, use_value_pred=args.value)
         else:
             results = evaluate_on_env_structure(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=300, ctg_target=2., 
-                                                 rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=1000, use_value_pred=args.value)
+                                                 rtg_scale=args.rtg_scale, ctg_scale=args.ctg_scale, num_eval_ep=50, max_test_ep_len=args.horizon, use_value_pred=args.value)
                     
         eval_avg_reward = results['eval/avg_reward']
         eval_avg_ep_len = results['eval/avg_ep_len']
@@ -217,12 +280,12 @@ if __name__ == '__main__':
         log_dict['max_step'].append(eval_avg_max_step)
         log_dict['success_rate'].append(eval_avg_succ)
         # if e % 10 == 0: 
-        np.save('log/'+args.model+'.npy', log_dict)
+        np.save(os.path.join('log/', args.model+'.npy'), log_dict)
         if e % 10 == 0: 
-            torch.save(model.state_dict(), 'checkpoint/'+args.model+'_{:3d}.pt'.format(e))
+            torch.save(model.state_dict(), os.path.join('checkpoint/', args.model, '{:03d}.pt'.format(e)))
         if eval_avg_succ > best_succ: 
             print('best success rate found!')
             best_succ = eval_avg_succ
-            torch.save(model.state_dict(), 'checkpoint/'+args.model+'_best.pt')
+            torch.save(model.state_dict(), os.path.join('checkpoint/', args.model, 'best.pt'))
     
     env.close()

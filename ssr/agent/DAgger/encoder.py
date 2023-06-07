@@ -82,7 +82,7 @@ class ImageStateEncoder_NonCausal(nn.Module):
 
         return state_pred, mu, torch.exp(std)
 
-class ImageStateEncoder(nn.Module):
+class ImageStateEncoder_old(nn.Module):
     def __init__(self, hidden_dim=16, nc=3, output_dim=OBS_DIM):
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -117,12 +117,35 @@ class ImageStateEncoder(nn.Module):
 
         return state_pred, mu, torch.exp(std)
 
+
+class ImageStateEncoder(nn.Module):
+    def __init__(self, hidden_dim=16, nc=3, output_dim=OBS_DIM):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.nc = nc
+        self.output_dim = output_dim
+
+        self.encoder = build_encoder_net(hidden_dim//2, 5)
+        self.fc_out = nn.Linear(hidden_dim, output_dim*2)
+
+    def reparameterize(self, mu, logstd):
+        std = torch.exp(logstd)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def forward(self, x): 
+        z = self.encoder(x)
+        z = self.fc_out(z)
+        
+        return z
+
+
 class StateEncoder(nn.Module):
-    def __init__(self, hidden_dim=16, output_dim=16):
+    def __init__(self, state_dim=35, hidden_dim=16, output_dim=16):
         super().__init__()
         self.output_dim = output_dim
         self.encoder = nn.Sequential(
-            *[nn.Linear(35, hidden_dim), 
+            *[nn.Linear(state_dim, hidden_dim), 
               nn.ReLU(), 
               nn.Linear(hidden_dim, hidden_dim),
               nn.ReLU(),
@@ -131,10 +154,8 @@ class StateEncoder(nn.Module):
     
     def forward(self, s):
         output = self.encoder(s)
-        mu = output[:, :self.output_dim]
-        log_std = output[:, self.output_dim:]
 
-        return mu, torch.exp(log_std)
+        return output
 
 
 

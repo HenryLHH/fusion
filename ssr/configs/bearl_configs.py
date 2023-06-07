@@ -26,9 +26,9 @@ class BEARLTrainConfig:
     threads: int = 4
     reward_scale: float = 0.1
     cost_scale: float = 1
-    actor_lr: float = 0.001
-    critic_lr: float = 0.001
-    vae_lr: float = 0.001
+    actor_lr: float = 0.0001
+    critic_lr: float = 0.0001
+    vae_lr: float = 0.0001
     cost_limit: int = 10
     episode_len: int = 300
     batch_size: int = 512
@@ -52,9 +52,9 @@ class BEARLTrainConfig:
     num_qc: int = 2
     PID: List[float] = field(default=[0.1, 0.003, 0.001], is_mutable=True)
     # evaluation params
-    eval_episodes: int = 10
-    eval_every: int = 2500
-
+    eval_episodes: int = 50
+    eval_every: int = 500
+    single_env: bool = False
 
 @dataclass
 class BEARLCarCircleConfig(BEARLTrainConfig):
@@ -101,6 +101,7 @@ class BEARLMetaDriveConfig(BEARLTrainConfig):
     task: str = "MetaDrive-TopDown-v0"
     episode_len: int = 1000
     eval_episodes: int = 50
+    single_env: bool = False
 
 BEARL_DEFAULT_CONFIG = {
     "OfflineCarCircle-v0": BEARLCarCircleConfig,

@@ -11,7 +11,8 @@ from torch.utils.data import Dataset, DataLoader
 
 from ssr.agent.icil.icil_state import ICIL as ICIL_state
 from ssr.agent.icil.icil import ICIL as ICIL_img
-from ssr.agent.icil.eval_icil import evaluate_on_env
+from ssr.agent.DAgger.eval_utils import evaluate_on_env
+from ssr.agent.DAgger.bc_model import BC_Agent
 
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from utils.dataset import BisimDataset_Fusion_Spurious, TransitionDataset_Baselines
@@ -98,57 +99,7 @@ def kl_divergence(mu, logvar):
     mean_kld = klds.mean(1).mean(0, True)
     return total_kld, dimension_wise_kld, mean_kld
 
-def eval_loss_dataloader_state(model, dataloader, verbose=0):
-    model.eval()
-    loss = 0
-    accuracy = 0.0
-    recall_all, precision_all = 0.0, 0.0
 
-    # pbar = tqdm(total=len(dataloader))
-    for data in dataloader:
-        # pbar.update(1)
-        img, img_next, lidar, _, state, state_next, action, reward, cost, vr_target, vc_target, _ = data
-        
-        img = CUDA(img)
-        img_next = CUDA(img_next)
-        state = CUDA(state)
-        state_next = CUDA(state_next)
-        action = CUDA(action)
-        # reward = CUDA(reward)
-        # cost = CUDA(torch.LongTensor(cost.reshape(-1)))
-        # vr_target = (CUDA(vr_target)-40) / 40.
-        # vc_target = CUDA(vc_target) / 10.
-        
-        # loss_bisim, loss_bisim_cost = 0., 0.
-        if args.image: 
-            policy_loss, next_state_pred_loss, next_state_energy_loss, mi_loss, mine_loss = \
-                model(img, action, img_next, deterministic=True)
-        
-        else:
-            policy_loss, next_state_pred_loss, next_state_energy_loss, mi_loss, mine_loss = \
-                model(state, action, state_next, deterministic=True)
-        
-        loss_act = policy_loss # + next_state_energy_loss #  loss_est + #  loss_est + loss_act # + loss_cls + loss_bisim + loss_bisim_cost # loss_state_est + 0.1*kl_loss + loss_bisim_cost
-        loss_rep = next_state_pred_loss + mi_loss
-        # loss += 0.0001 * loss_norm
-        
-        loss += (loss_act+loss_rep).item()
-    
-
-        loss += (loss_act).item() # (loss_est+loss_ret+loss_bisim+loss_bisim_cost).item()
-        # print('train loss: {:4f} | precision: {:.4f} | recall: {:.4f} | acc: {:.4f} '.format(loss_ret.item(), precision, recall, acc), end='\r')
-        print('policy loss: {:4f} | rep. loss: {:.4f} | act loss: {:.4f} | energy loss: {:.4f} | state pred loss: {:.4f}'.format(
-            loss_act.item(), loss_rep.item(), policy_loss.item(), next_state_energy_loss.item(), next_state_pred_loss.item()), end='\r')
-        torch.cuda.empty_cache()
-    
-    loss /= len(dataloader)
-    recall_all /= len(dataloader)
-    precision_all /= len(dataloader)
-    accuracy /= len(dataloader)
-
-    # pbar.close()
-
-    return loss
 
 def get_train_parser():
     parser = argparse.ArgumentParser()
@@ -156,7 +107,7 @@ def get_train_parser():
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
     parser.add_argument("--dataset", type=str, default="dataset_mixed_post", help="dataset to load")
 
-    parser.add_argument("--image", type=bool, default=False, help="use image or not")
+    parser.add_argument("--image", action="store_true", help="use image or not")
     parser.add_argument("--single_env", action="store_true", help='use single block envs')
     parser.add_argument("--horizon", type=int, default=1000, help='horizon of a task')
 
@@ -178,17 +129,17 @@ if __name__ == '__main__':
     # os.makedirs(os.path.join("log/", args.model), exist_ok=True)
     os.makedirs(os.path.join("checkpoint/", args.model), exist_ok=True)
     data_path = os.path.join("dataset", args.dataset)
-
-    train_set = BisimDataset_Fusion_Spurious(file_path=data_path, num_files=150*400, \
+    
+    train_set = BisimDataset_Fusion_Spurious(file_path=data_path, \
                             noise_scale=0, balanced=True, image=args.image) # TODO: //10
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     
     if args.image: 
-        model = CUDA(ICIL_img(state_dim=5, action_dim=2, hidden_dim_input=64, hidden_dim=64))
+        model = CUDA(BC_Agent(hidden_dim=64, action_dim=2, use_img=True))
     else:
-        model = CUDA(ICIL_state(state_dim=35, action_dim=2, hidden_dim_input=64, hidden_dim=64))
+        model = CUDA(BC_Agent(hidden_dim=64, action_dim=2, use_img=False))
     print(model)
-        
+    
     optimizer = optim.Adam(model.parameters(), lr=1e-4, betas=(0.9, 0.999))
     
     best_val_loss = 1e9
@@ -212,31 +163,27 @@ if __name__ == '__main__':
             img_next = CUDA(img_next)
             state = CUDA(state)
             state_next = CUDA(state_next)
+            lidar = CUDA(lidar)
+
             action = CUDA(action)
             # reward = CUDA(reward)
             # cost = CUDA(torch.LongTensor(cost.reshape(-1)))
             # vr_target = (CUDA(vr_target)-40) / 40.
             # vc_target = CUDA(vc_target) / 10.
             if args.image: 
-                policy_loss, next_state_pred_loss, next_state_energy_loss, mi_loss, mine_loss = \
-                    model(img, action, img_next)
+                action_pred, policy_loss = model.forward(img, lidar, action, deterministic=False)
             else: 
-                policy_loss, next_state_pred_loss, next_state_energy_loss, mi_loss, mine_loss = \
-                    model(state, action, state_next)
+                action_pred, policy_loss = model.forward(state, lidar, action, deterministic=False)
+
                 
-            loss_act = policy_loss + 1e-3*next_state_energy_loss #  loss_est + #  loss_est + loss_act # + loss_cls + loss_bisim + loss_bisim_cost # loss_state_est + 0.1*kl_loss + loss_bisim_cost
-            loss_rep = next_state_pred_loss + mi_loss
-            # loss += 0.0001 * loss_norm
-            model.policy_opt.zero_grad()
-            model.rep_opt.zero_grad()
-            loss_act.backward(retain_graph=True)
-            loss_rep.backward()
-            model.policy_opt.step()
-            model.rep_opt.step()
-            
-            loss_train += (loss_act+loss_rep).item()
-            print('update {:04d}/{:04d} | policy loss: {:4f} | rep. loss: {:.4f} | act loss: {:.4f} | energy loss: {:.4f} | state pred loss: {:.4f}'.format(
-                idx, len(train_dataloader), loss_act.item(), loss_rep.item(), policy_loss.item(), next_state_energy_loss.item(), next_state_pred_loss.item()), end='\r')
+            loss_act = policy_loss  #  loss_est + #  loss_est + loss_act # + loss_cls + loss_bisim + loss_bisim_cost # loss_state_est + 0.1*kl_loss + loss_bisim_cost
+            optimizer.zero_grad()
+            loss_act.backward()
+            optimizer.step()
+
+            loss_train += (loss_act).item()
+            print('update {:04d}/{:04d} | policy loss: {:4f}'.format(
+                idx, len(train_dataloader), loss_act.item()), end='\r')
         
         loss_train /= len(train_dataloader)
         print('\n')
