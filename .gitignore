@@ -9,7 +9,8 @@ wandb/
 __pycache__/
 *.py[cod]
 *$py.class
-dataset/
+dataset/*
+dataset
 # C extensions
 *.so
 

@@ -32,7 +32,7 @@ class State_TopDownObservation(TopDownMultiChannel):
         #     frame_stack, post_stack, frame_skip, resolution, max_distance)
         super(State_TopDownObservation, self).__init__(vehicle_config, False, clip_rgb, \
             frame_stack, post_stack, frame_skip, resolution, max_distance)
-
+    
     @property
     def observation_space(self):
         shape = (self.num_stacks, ) + self.obs_shape
