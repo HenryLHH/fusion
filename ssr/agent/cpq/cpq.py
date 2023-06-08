@@ -335,15 +335,12 @@ class CPQTrainer:
         """
         self.model.eval()
         episode_rets, episode_costs, episode_lens = [], [], []
-        for _ in trange(eval_episodes, desc="Evaluating...", leave=False):
-            epi_ret, epi_len, epi_cost = self.rollout()
-            episode_rets.append(epi_ret)
-            episode_lens.append(epi_len)
-            episode_costs.append(epi_cost)
+        # for _ in trange(eval_episodes, desc="Evaluating...", leave=False):
+        epi_ret, epi_len, epi_cost, success = self.rollout(eval_episodes)
+        
         self.model.train()
-        return np.mean(episode_rets) / self.reward_scale, np.mean(
-            episode_costs) / self.cost_scale, np.mean(episode_lens)
-
+        return epi_ret, epi_cost, epi_len, np.mean(np.array(success)[:, 0])
+    
     @torch.no_grad()
     def rollout(self, eval_episodes):
         """
