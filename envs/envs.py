@@ -30,9 +30,8 @@ class State_TopDownObservation(TopDownMultiChannel):
         # self.state_observor = StateObservation(vehicle_config)        
         # self.img_observor = TopDownMultiChannel(vehicle_config, env, clip_rgb, \
         #     frame_stack, post_stack, frame_skip, resolution, max_distance)
-        TopDownMultiChannel.__init__(self, vehicle_config, env, clip_rgb, \
+        super(State_TopDownObservation, self).__init__(vehicle_config, False, clip_rgb, \
             frame_stack, post_stack, frame_skip, resolution, max_distance)
-        
 
     @property
     def observation_space(self):
@@ -80,6 +79,7 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
             "distance": 20, # same with offline data
             "obs_noise_scale": 0.0,
             "idm_target_speed": 30,
+            "idm_acc_factor": 1.0,
         })
         return config
     

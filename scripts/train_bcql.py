@@ -10,11 +10,11 @@ import pyrallis
 import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import trange  # nosuqa
-from fsrl.utils import WandbLogger
+from utils.logger import WandbLogger
 
 from utils.dataset import TransitionDataset_Baselines
 from ssr.agent.bcql.bcql import BCQL, BCQLTrainer
-from fsrl.utils.exp_util import auto_name, seed_all
+from utils.exp_utils import auto_name, seed_all
 from ssr.configs.bcql_configs import BCQLTrainConfig, BCQL_DEFAULT_CONFIG
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from utils.exp_utils import make_envs, make_envs_single

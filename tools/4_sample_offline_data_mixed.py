@@ -159,6 +159,7 @@ def sample_in_envs(block_list=["S", "O", "R", "T"], density=0.2, target_speed=30
                 # generalized_blocks=["X", "S", "C"],
                 agent_policy=IDMPolicy_CustomSpeed, 
                 idm_target_speed=target_speed,
+                # idm_acc_factor=target_speed/10., 
                 horizon=999,
             )
         )
@@ -192,19 +193,19 @@ if __name__ == "__main__":
     index_save = 0
     plt.figure()
 
-    cost_list, rew_list = sample_in_envs(["S", "T", "R", "O"], 0.2, target_speed=10)
+    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=10)
     plt.scatter(cost_list, rew_list)
     print("10: ", np.mean(cost_list), np.mean(rew_list))
     
-    cost_list, rew_list = sample_in_envs(["S", "T", "R", "O"], 0.2, target_speed=20)
+    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=20)
     plt.scatter(cost_list, rew_list)
     print("30: ", np.mean(cost_list), np.mean(rew_list))
     
-    cost_list, rew_list = sample_in_envs(["S", "T", "R", "O"], 0.2, target_speed=30)
+    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=30)
     plt.scatter(cost_list, rew_list)
     print("50: ", np.mean(cost_list), np.mean(rew_list))
     
-    cost_list, rew_list = sample_in_envs(["S", "T", "R", "O"], 0.2, target_speed=40)
+    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=40)
     plt.scatter(cost_list, rew_list)
     print("70: ", np.mean(cost_list), np.mean(rew_list))
     

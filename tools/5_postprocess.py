@@ -116,9 +116,14 @@ for f_data, f_label in zip(filename_data, filename_label):
         label_cur.update({'value_reward_target': v_r_target[i], 
                           'value_cost_target': v_c_target[i],
                           'value_cost_target_cont': v_c_target_cont[i]})
+
+        # print(os.path.join(args.filename+'_post', 'data/', str(count_trans)+'.npy'), os.path.join(args.filename+'_post', 'label/', str(count_trans)+'.npy'))
         
-        np.save(os.path.join(args.filename+'_post', 'label/')+str(count_trans)+'.npy', label_cur)
-        np.save(os.path.join(args.filename+'_post', 'data/')+str(count_trans)+'.npy', [transitions, lidar_transitions, label_transitions])
+        np.save(os.path.join(args.filename+'_post', 'label/', str(count_trans)+'.npy'), label_cur, \
+            allow_pickle=True)
+        data = list([transitions, lidar_transitions, label_transitions])
+        np.save(os.path.join(args.filename+'_post', 'data/', str(count_trans)+'.npy'), \
+            data)
         count_trans += 1
         
         # get stats
