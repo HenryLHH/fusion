@@ -146,9 +146,9 @@ class StateEncoder(nn.Module):
         self.output_dim = output_dim
         self.encoder = nn.Sequential(
             *[nn.Linear(state_dim, hidden_dim), 
-              nn.ReLU(), 
+              nn.ELU(), 
               nn.Linear(hidden_dim, hidden_dim),
-              nn.ReLU(),
+              nn.ELU(),
               nn.Linear(hidden_dim, output_dim*2)]
         )
     

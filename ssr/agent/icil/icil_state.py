@@ -50,7 +50,9 @@ class FeaturesEncoder(nn.Module):
         
         self.layers = nn.Sequential(
             nn.Linear(input_size, width), 
+            nn.ELU(),
             nn.Linear(width, width), 
+            nn.ELU(),
             nn.Linear(width, representation_size),
         )
         # self.layers = build_encoder_net(z_dim=representation_size, nc=input_size)

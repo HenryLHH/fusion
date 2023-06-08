@@ -1,5 +1,5 @@
 #!/bin/bash
-python scripts/train_bc.py --mode train --model bc_state_correct \
+python scripts/train_bnn.py --mode train --model bnn_three \
         --dataset dataset_mixed_post
 # python scripts/train_icil.py --mode train --model icil_state_single_repeat_small_portion \
 #         --dataset dataset_mixed_single_post --single_env

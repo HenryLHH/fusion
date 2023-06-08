@@ -24,7 +24,10 @@ class BC_Agent(nn.Module):
         
         self.lidar_encoder = StateEncoder(state_dim=240, hidden_dim=hidden_dim, output_dim=hidden_dim//2)
         self.use_img = use_img
-        self.aggregate = nn.Sequential(nn.Linear(hidden_dim*2, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, action_dim*2))
+        self.aggregate = nn.Sequential(nn.ReLU(), 
+                                        nn.Linear(hidden_dim*2, hidden_dim), 
+                                        nn.ReLU(), 
+                                        nn.Linear(hidden_dim, action_dim*2))
         self.criteria = nn.MSELoss()
         self.min_std, self.max_std = 1e-1, 1.
 

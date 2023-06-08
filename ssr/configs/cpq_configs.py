@@ -26,10 +26,10 @@ class CPQTrainConfig:
     threads: int = 4
     reward_scale: float = 0.1
     cost_scale: float = 1
-    actor_lr: float = 0.0001
+    actor_lr: float = 0.00001
     critic_lr: float = 0.0001
-    alpha_lr: float = 0.0001
-    vae_lr: float = 0.001
+    alpha_lr: float = 0.00001
+    vae_lr: float = 0.0001
     cost_limit: int = 10
     episode_len: int = 300
     batch_size: int = 512
