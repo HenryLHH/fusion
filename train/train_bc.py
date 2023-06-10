@@ -109,6 +109,8 @@ def get_train_parser():
 
     parser.add_argument("--image", action="store_true", help="use image or not")
     parser.add_argument("--single_env", action="store_true", help='use single block envs')
+    parser.add_argument("--safe", action="store_true", help='use safe data only')
+
     parser.add_argument("--horizon", type=int, default=1000, help='horizon of a task')
 
 
@@ -129,8 +131,8 @@ if __name__ == '__main__':
     # os.makedirs(os.path.join("log/", args.model), exist_ok=True)
     os.makedirs(os.path.join("checkpoint/", args.model), exist_ok=True)
     data_path = os.path.join("dataset", args.dataset)
-    
-    train_set = BisimDataset_Fusion_Spurious(file_path=data_path, \
+    num_files = 80000 if args.safe else None
+    train_set = BisimDataset_Fusion_Spurious(file_path=data_path, num_files=num_files, \
                             noise_scale=0, balanced=True, image=args.image) # TODO: //10
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     

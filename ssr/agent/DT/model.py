@@ -285,8 +285,7 @@ class SafeDecisionTransformer_Structure(nn.Module):
         # for v in self.embed_img.parameters():
         #     v.requires_grad = False
         
-        print('Image Encoder Freezed')
-        
+                
         self.embed_state = torch.nn.Linear(state_dim, h_dim)
         
         # # discrete actions

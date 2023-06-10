@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
@@ -407,6 +409,7 @@ def get_train_parser():
     parser.add_argument("--mode", type=str, default="train", help="train/test")
     parser.add_argument("--model", type=str, default="encoder.pt", help="checkpoint to load")
     parser.add_argument("--encoder", type=str, default="image", help="image/state")
+    parser.add_argument("--dataset", type=str, default="dataset_mixed_single_post", help="dataset used")
     parser.add_argument("--causal", type=bool, default=False, help="causal encoder")
 
 
@@ -415,20 +418,20 @@ def get_train_parser():
 if __name__ == '__main__':
     from utils.dataset import *
     args = get_train_parser().parse_args()
-
+    dataset_path = os.path.join("dataset", args.dataset)
     if args.encoder == 'image':
         train_set = BisimDataset(file_path='../data/data_bisim_generalize_post', num_files=int(NUM_FILES*0.8), balanced=True) # TODO: //10
         val_set = BisimDataset(file_path='../data/data_bisim_generalize_post', \
-                                num_files=NUM_FILES-int(NUM_FILES*0.8), offset=int(NUM_FILES*0.8), noise_scale=0.0)
-        val_set_noise = BisimDataset(file_path='../data/data_bisim_generalize_post', \
-                                num_files=NUM_FILES-int(NUM_FILES*0.8), offset=int(NUM_FILES*0.8), noise_scale=0.5)
+                                num_files=80000, offset=300000, noise_scale=0.0)
+        # val_set_noise = BisimDataset(file_path='../data/data_bisim_generalize_post', \
+        #                         num_files=80000, offset=300000, noise_scale=0.5)
     
     elif args.encoder in ['image_spurious', 'icil']: 
-        train_set = BisimDataset_Fusion_Spurious(file_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics_post', noise_scale=0, num_files=int(NUM_FILES*0.8), balanced=True) # TODO: //10
-        val_set = BisimDataset_Fusion_Spurious(file_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics_post', \
-                                num_files=NUM_FILES-int(NUM_FILES*0.8), offset=int(NUM_FILES*0.8), noise_scale=0)
-        val_set_noise = BisimDataset_Fusion_Spurious(file_path='/home/haohong/0_causal_drive/baselines_clean/envs/data_mixed_dynamics_post', \
-                                num_files=NUM_FILES-int(NUM_FILES*0.8), offset=int(NUM_FILES*0.8), noise_scale=20)
+        train_set = BisimDataset_Fusion_Spurious(file_path=dataset_path, num_files=300_000, noise_scale=0, balanced=True) # TODO: //10
+        val_set = BisimDataset_Fusion_Spurious(file_path=dataset_path, \
+                                num_files=80000, offset=300_000, noise_scale=0)
+        # val_set_noise = BisimDataset_Fusion_Spurious(file_path=dataset_path, \
+        #                         num_files=NUM_FILES-int(NUM_FILES*0.8), offset=int(NUM_FILES*0.8), noise_scale=20)
     
     elif args.encoder == 'state':
         train_set = BisimDataset(file_path='../data/data_bisim_generalize_post', num_files=50000, balanced=True) # TODO: //10
@@ -441,7 +444,7 @@ if __name__ == '__main__':
     
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     val_dataloader = DataLoader(val_set, batch_size=1024, shuffle=True, num_workers=16)
-    val_dataloader_noise = DataLoader(val_set_noise, batch_size=1024, shuffle=True, num_workers=16)
+    # val_dataloader_noise = DataLoader(val_set_noise, batch_size=1024, shuffle=True, num_workers=16)
     
     criterion = nn.MSELoss(reduction='mean')
 
@@ -499,7 +502,6 @@ if __name__ == '__main__':
                 model.eval()
 
                 loss_val = eval_loss_dataloader_state(model, val_dataloader)
-                # loss_val_noise = eval_loss_dataloader_state(model, val_dataloader_noise)
                 
                 print('Epoch {:3d}, train_loss: {:4f}, val_loss:  {:4f}'.format(epoch, loss_train, loss_val))
                 

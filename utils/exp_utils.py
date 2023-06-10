@@ -13,7 +13,7 @@ import yaml
 from envs.envs import State_TopDownMetaDriveEnv
 from metadrive.manager.traffic_manager import TrafficMode
 from metadrive.component.pgblock.first_block import FirstPGBlock
-
+from tqdm import tqdm
 
 def make_envs(): 
     config = dict(
@@ -246,3 +246,48 @@ def auto_name(
     name = "default" if not len(name) else name
     name = f"{name}-{str(uuid.uuid4())[:4]}"
     return name
+
+
+@torch.no_grad()
+def evaluate_rollouts(model, env, num_eval_ep=50):
+    """
+    Evaluates the performance of the model on a single episode.
+    """
+    obs = env.reset()
+    n_envs = env.num_envs
+    results = {}
+    episode_rets, episode_costs, episode_lens = [], [], []
+    episode_ret, episode_cost, episode_len = 0.0, 0.0, 0
+    count_ep = 0
+    success = []
+    total_reward = 0
+    total_cost = 0
+    total_timesteps = 0
+    pbar = tqdm(total=num_eval_ep)
+    while count_ep < num_eval_ep: 
+        act, _ =  model.act(obs['state'], True, True, batch_inputs=True)
+        obs_next, reward, done, info = env.step(act)
+        cost = np.array([info[i]["cost"] for i in range(n_envs)])
+        obs = obs_next
+        episode_ret += reward.sum()
+        episode_len += n_envs
+        episode_cost += cost.sum()
+        for i in range(n_envs):
+            if done[i]:
+                count_ep += 1
+                total_reward += info[i]['episode_reward']
+                total_timesteps += info[i]['episode_length']
+                success.append([info[i]['arrive_dest'], info[i]['out_of_road'], info[i]['crash'], info[i]['max_step']])
+                pbar.update(1)
+                if count_ep >= num_eval_ep: 
+                    break
+    pbar.close()
+    results['eval/avg_reward'] = total_reward / count_ep
+    results['eval/avg_ep_len'] = total_timesteps / count_ep
+    results['eval/success_rate'] = np.array(success)[:, 0].mean()
+    results['eval/oor_rate'] = np.array(success)[:, 1].mean()
+    results['eval/crash_rate'] = np.array(success)[:, 2].mean()
+    results['eval/max_step'] = np.array(success)[:, 3].mean()
+    results['eval/avg_cost'] = episode_cost / count_ep
+    
+    return results

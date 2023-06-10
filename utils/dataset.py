@@ -257,7 +257,7 @@ class Dataset_EBM(Dataset):
 class BisimDataset_Fusion_Spurious(Dataset):
     def __init__(self, file_path, num_files=None, offset=0, noise_scale=0, balanced=False, image=False):
         assert isinstance(noise_scale, int), 'noise scale should be an integer'
-
+        
         # self.num_files = num_files
         print(file_path)
         if num_files is None: 

@@ -34,7 +34,7 @@ def evaluate_on_env_cnn(model, device, env, num_eval_ep=10, render=False, max_te
             
             running_state, running_reward, done, info = env.step(act.cpu().numpy())
             # add action in placeholder
-            running_cost = np.array([info[idx]['cost_sparse'] for idx in range(len(info))])
+            running_cost = np.array([info[idx]['cost'] for idx in range(len(info))])
             total_reward += np.sum(running_reward)
             total_cost += running_cost.sum()
             if render:

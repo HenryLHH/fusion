@@ -18,16 +18,12 @@ class BC_Agent(nn.Module):
         super().__init__()
         self.action_dim = action_dim
         if use_img: 
-            self.image_encoder = ImageStateEncoder(hidden_dim=hidden_dim, nc=5, output_dim=hidden_dim//2)
+            self.image_encoder = ImageStateEncoder(hidden_dim=hidden_dim, nc=5, output_dim=action_dim)
         else: 
-            self.state_encoder = StateEncoder(state_dim=35, hidden_dim=hidden_dim, output_dim=hidden_dim//2)
-        
-        self.lidar_encoder = StateEncoder(state_dim=240, hidden_dim=hidden_dim, output_dim=hidden_dim//2)
+            self.state_encoder = StateEncoder(state_dim=240+35, hidden_dim=hidden_dim, output_dim=action_dim)
+
         self.use_img = use_img
-        self.aggregate = nn.Sequential(nn.ReLU(), 
-                                        nn.Linear(hidden_dim*2, hidden_dim), 
-                                        nn.ReLU(), 
-                                        nn.Linear(hidden_dim, action_dim*2))
+
         self.criteria = nn.MSELoss()
         self.min_std, self.max_std = 1e-1, 1.
 
@@ -37,13 +33,11 @@ class BC_Agent(nn.Module):
         if self.use_img: 
             z_state = self.image_encoder(state)
         else: 
-            z_state = self.state_encoder(state)
+            state_input = torch.cat([state, lidar], axis=1)
+            z_state = self.state_encoder(state_input)
 
-        z_lidar = self.lidar_encoder(lidar)
-        z_agg = torch.cat([z_state, z_lidar], axis=1)
-        z_agg = self.aggregate(z_agg)
 
-        mu_act, std_act = z_agg[:, :self.action_dim], self.min_std + (self.max_std-self.min_std)*torch.sigmoid(z_agg[:, self.action_dim:])
+        mu_act, std_act = z_state[:, :self.action_dim], self.min_std + (self.max_std-self.min_std)*torch.sigmoid(z_state[:, self.action_dim:])
         dist = D.Normal(mu_act, std_act)
 
         if not deterministic:
@@ -62,10 +56,9 @@ class BC_Agent(nn.Module):
         if self.use_img: 
             z_state = self.image_encoder(state)
         else: 
-            z_state = self.state_encoder(state)
+            state_input = torch.cat([state, lidar], axis=1)
+            z_state = self.state_encoder(state_input)
         
-        z_lidar = self.lidar_encoder(lidar)
-        z_agg = torch.cat([z_state, z_lidar], axis=1)
-        action = z_agg[:, :self.action_dim]
-
+        action = z_state[:, :self.action_dim]
+        
         return action

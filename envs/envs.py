@@ -181,9 +181,9 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
                     else:
                         done = True
 
-            # overwrite any potential change when it needs to be truncated
-            if done_info[TerminationState.MAX_STEP]: 
-                done = True
+        # overwrite any potential change when it needs to be truncated
+        if done_info[TerminationState.MAX_STEP]: 
+            done = True
 
         return done, done_info
 
@@ -202,7 +202,7 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
         # print("v: ", i['velocity'])
         i['cost'] = i['cost_sparse'] + i['velocity_cost']
         self.last_dist = lidar_dist
-
+        
         i['last_state'] = self.last_state["state"]
         i['last_lidar'] = self.last_state["lidar"]
         o.update({'state': i['true_state'], 'lidar': i['lidar_state']})

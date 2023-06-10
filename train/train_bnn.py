@@ -130,7 +130,7 @@ if __name__ == '__main__':
     os.makedirs(os.path.join("checkpoint/", args.model), exist_ok=True)
     data_path = os.path.join("dataset", args.dataset)
     
-    train_set = BisimDataset_Fusion_Spurious(file_path=data_path, num_files=80_000, \
+    train_set = BisimDataset_Fusion_Spurious(file_path=data_path, \
                             noise_scale=0, balanced=True, image=args.image) # TODO: //10
     train_dataloader = DataLoader(train_set, batch_size=128, shuffle=True, num_workers=16)
     
