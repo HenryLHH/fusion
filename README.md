@@ -2,7 +2,7 @@
 
 ### Install Guidelines
 
-```
+```shell
 git clone https://github.com/HenryLHH/fusion
 
 # install fusion package in the virtual env
