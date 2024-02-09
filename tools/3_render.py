@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 import argparse
@@ -6,18 +8,19 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from metadrive.manager.traffic_manager import TrafficMode
 from envs.envs import State_TopDownMetaDriveEnv
 
-from ssr.agent.DT.utils import render_env
-from ssr.agent.DT.model import SafeDecisionTransformer_Structure
-from ssr.agent.icil.eval_icil import render_env_icil
-from ssr.agent.icil.icil import ICIL
-from ssr.agent.bisim.eval_cnn import render_env_cnn
-from ssr.encoder.model_actor import BisimEncoder_Head_BP_Actor
+from fusion.agent.DT.utils import render_env
+from fusion.agent.DT.model import SafeDecisionTransformer_Structure
+from fusion.agent.icil.eval_icil import render_env_icil
+from fusion.agent.icil.icil import ICIL
+from fusion.agent.bisim.eval_cnn import render_env_cnn
+from fusion.encoder.model_actor import BisimEncoder_Head_BP_Actor
 
 from utils.utils import CUDA
 
 def make_envs(): 
     config = dict(
-        environment_num=args.env_num, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        use_render=True,
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
         start_seed=args.seed, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
         safe_rl_env=True,
@@ -30,7 +33,8 @@ def make_envs():
         )),
         traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
         traffic_mode=TrafficMode.Hybrid,
-        horizon=1000,
+        horizon=999,
+        map_config=dict(type="block_sequence", config="TRO"), 
         # IDM_agent=True,
         # resolution_size=64,
         # generalized_blocks=tune.grid_search([['X', 'T']])
@@ -42,9 +46,11 @@ def get_train_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--method", type=str, default="ssr", help="methods to evaluate")
     parser.add_argument("--model", type=str, default="encoder", help="checkpoint to load")
-    parser.add_argument("--seed", type=int, default=0, help="checkpoint to load")
-    parser.add_argument("--env_num", type=int, default=50, help="checkpoint to load")
-    
+    parser.add_argument("--seed", type=int, default=0, help="start seeds")
+    parser.add_argument("--env_num", type=int, default=50, help="number of envs")
+    parser.add_argument("--context", type=int, default=20, help="context length")
+    parser.add_argument("--dynamics", action="store_true", help='train world dynamics')
+    parser.add_argument("--value", action="store_true", help='train value model')
 
     return parser
 
@@ -54,11 +60,13 @@ if __name__ == '__main__':
     env = make_envs() # SubprocVecEnv([make_envs for _ in range(32)])
     
     if args.method == 'ssr': 
-        model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=1, drop_p=0.1, max_timestep=1000))
-        model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
+        model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=args.context, n_heads=1, drop_p=0.1, max_timestep=1000))
+        # model.load_state_dict(torch.load('checkpoint/'+args.model+'.pt'))
+        model.load_state_dict(torch.load(os.path.join('checkpoint/', args.model, 'best.pt')))
         print('model loaded')
-        results = render_env(model, torch.device('cuda:0'), context_len=30, env=env, rtg_target=350, ctg_target=1, 
-                                            rtg_scale=40.0, ctg_scale=10.0, num_eval_ep=50, max_test_ep_len=1000, render=True)
+        results = render_env(model, torch.device('cuda:0'), context_len=args.context, env=env, rtg_target=350, ctg_target=4.0, 
+                                            rtg_scale=300.0, ctg_scale=40.0, num_eval_ep=50, max_test_ep_len=1000, render=True, use_value_pred=args.value)
+        
     elif args.method == 'icil': 
         model = CUDA(ICIL(state_dim=5, action_dim=2, hidden_dim_input=64, hidden_dim=64))
         model.load_state_dict(torch.load('checkpoint/icil/'+args.model+'.pt'))

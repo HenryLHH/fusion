@@ -1,5 +1,3 @@
-# flake8: noqa
-
 import os
 import os.path as osp
 import random
@@ -20,7 +18,7 @@ def make_envs():
         environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
         start_seed=0, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
-        safe_rl_env=True,
+        safe_rl_env=False,
         random_traffic=False,
         accident_prob=0,
         distance=20,
@@ -40,7 +38,7 @@ def make_envs():
     return State_TopDownMetaDriveEnv(config)
 
 
-block_list=["S", "T", "R", "O"]
+block_list=["S", "T", "R", "X"]
 
 def make_envs_single(block_id=0): 
     idx = int(block_id // 4)
@@ -49,7 +47,7 @@ def make_envs_single(block_id=0):
         environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
         start_seed=0, #tune.grid_search([0, 1000]),
         frame_stack=3, # TODO: debug
-        safe_rl_env=True,
+        safe_rl_env=False,
         random_traffic=False,
         accident_prob=0,
         distance=20,
@@ -262,6 +260,7 @@ def evaluate_rollouts(model, env, num_eval_ep=50):
     success = []
     total_reward = 0
     total_cost = 0
+    total_overspeed = 0
     total_timesteps = 0
     pbar = tqdm(total=num_eval_ep)
     while count_ep < num_eval_ep: 
@@ -272,6 +271,8 @@ def evaluate_rollouts(model, env, num_eval_ep=50):
         episode_ret += reward.sum()
         episode_len += n_envs
         episode_cost += cost.sum()
+        running_overspeed = np.array([info[idx]['velocity_cost']>0. for idx in range(len(info))])
+        total_overspeed += np.sum(running_overspeed)
         for i in range(n_envs):
             if done[i]:
                 count_ep += 1
@@ -289,5 +290,6 @@ def evaluate_rollouts(model, env, num_eval_ep=50):
     results['eval/crash_rate'] = np.array(success)[:, 2].mean()
     results['eval/max_step'] = np.array(success)[:, 3].mean()
     results['eval/avg_cost'] = episode_cost / count_ep
+    results['eval/over_speed'] = total_overspeed / total_timesteps
     
     return results

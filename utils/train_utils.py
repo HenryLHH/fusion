@@ -2,41 +2,66 @@ import argparse
 import logging
 import os
 
-import ray
+import torch
+import numpy as np
 
+from metadrive.manager.traffic_manager import TrafficMode
+from envs.envs import State_TopDownMetaDriveEnv
 
-def initialize_ray(local_mode=False, num_gpus=None, test_mode=False, **kwargs):
-    os.environ['OMP_NUM_THREADS'] = '1'
+def CPU(x):
+    return x.detach().cpu().numpy()
 
-    if ray.__version__.split(".")[0] == "1":  # 1.0 version Ray
-        if "redis_password" in kwargs:
-            redis_password = kwargs.pop("redis_password")
-            kwargs["_redis_password"] = redis_password
+def CUDA(x):
+    if isinstance(x, np.ndarray):
+        x = torch.from_numpy(x)
+    return x.cuda()
 
-    ray.init(
-        logging_level=logging.ERROR if not test_mode else logging.DEBUG,
-        log_to_driver=test_mode,
-        local_mode=local_mode,
-        num_gpus=num_gpus,
-        ignore_reinit_error=True,
-        **kwargs
+def make_envs(args): 
+    config = dict(
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        start_seed=0, #tune.grid_search([0, 1000]),
+        frame_stack=3, # TODO: debug
+        safe_rl_env=True,
+        random_traffic=False,
+        accident_prob=0,
+        distance=20,
+        vehicle_config=dict(lidar=dict(
+            num_lasers=240,
+            distance=50,
+            num_others=4
+        )),
+        map_config=dict(type="block_sequence", config="TRO"), 
+        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
+        traffic_mode=TrafficMode.Trigger,
+        horizon=args.horizon-1,
     )
-    print("Successfully initialize Ray!")
-    try:
-        print("Available resources: ", ray.available_resources())
-    except Exception:
-        pass
+    return State_TopDownMetaDriveEnv(config)
 
+block_list=["S", "T", "R", "O"]
 
-def get_train_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exp-name", type=str, default="")
-    parser.add_argument("--num-gpus", type=int, default=0)
-    parser.add_argument("--num-seeds", type=int, default=3)
-    parser.add_argument("--num-cpus-per-worker", type=float, default=0.5)
-    parser.add_argument("--num-gpus-per-trial", type=float, default=0.25)
-    parser.add_argument("--test", action="store_true")
-    return parser
+def make_envs_single(args, block_id=0): 
+    idx = int(block_id // 4)
+    block_type=block_list[idx]
+    config = dict(
+        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
+        start_seed=0, #tune.grid_search([0, 1000]),
+        frame_stack=3, # TODO: debug
+        safe_rl_env=True,
+        random_traffic=False,
+        accident_prob=0,
+        distance=20,
+        vehicle_config=dict(lidar=dict(
+            num_lasers=240,
+            distance=50,
+            num_others=4
+        )),
+        map_config=dict(type="block_sequence", config=block_type), 
+        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
+        traffic_mode=TrafficMode.Hybrid,
+        horizon=args.horizon-1,
+    )
+    return State_TopDownMetaDriveEnv(config)
+
 
 
 def setup_logger(debug=False):

@@ -1,7 +1,12 @@
 log/
 logs/
 checkpoint/
+attn/
 wandb/
+tools/
+.vscode/
+output/
+fig/
 *.pt
 *.png
 *.jpg

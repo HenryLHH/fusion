@@ -29,7 +29,7 @@ from metadrive.manager.traffic_manager import TrafficMode
 from metadrive.component.pgblock.first_block import FirstPGBlock
 
 from envs.envs import State_TopDownMetaDriveEnv
-from ssr.agent.expert.idm_custom import IDMPolicy_CustomSpeed
+from fusion.agent.expert.idm_custom import IDMPolicy_CustomSpeed
 
 def draw_multi_channels_top_down_observation(obs):
     num_channels = obs.shape[-1]
@@ -193,19 +193,19 @@ if __name__ == "__main__":
     index_save = 0
     plt.figure()
 
-    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=10)
+    cost_list, rew_list = sample_in_envs(["S", "O", "R", "T"], 0.2, target_speed=10)
     plt.scatter(cost_list, rew_list)
     print("10: ", np.mean(cost_list), np.mean(rew_list))
     
-    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=20)
+    cost_list, rew_list = sample_in_envs(["S", "O", "R", "T"], 0.2, target_speed=20)
     plt.scatter(cost_list, rew_list)
     print("30: ", np.mean(cost_list), np.mean(rew_list))
     
-    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=30)
+    cost_list, rew_list = sample_in_envs(["S", "O", "R", "T"], 0.2, target_speed=30)
     plt.scatter(cost_list, rew_list)
     print("50: ", np.mean(cost_list), np.mean(rew_list))
     
-    cost_list, rew_list = sample_in_envs(["TRO"], 0.2, target_speed=40)
+    cost_list, rew_list = sample_in_envs(["S", "O", "R", "T"], 0.2, target_speed=40)
     plt.scatter(cost_list, rew_list)
     print("70: ", np.mean(cost_list), np.mean(rew_list))
     

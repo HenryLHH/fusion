@@ -15,8 +15,8 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from utils.logger import WandbLogger
 from utils.dataset import TransitionDataset_Baselines # TODO
 
-from ssr.agent.bearl.bearl import BEARL, BEARLTrainer
-from ssr.configs.bearl_configs import BEARLTrainConfig, BEARL_DEFAULT_CONFIG
+from fusion.agent.bearl.bearl import BEARL, BEARLTrainer
+from fusion.configs.bearl_configs import BEARLTrainConfig, BEARL_DEFAULT_CONFIG
 
 from utils.exp_utils import make_envs, make_envs_single, auto_name, seed_all
 
@@ -121,8 +121,16 @@ def train(args: BEARLTrainConfig):
 
         # evaluation
         if (step + 1) % args.eval_every == 0 or step == args.update_steps - 1:
-            ret, cost, length, success_rate = trainer.evaluate(args.eval_episodes)
-            logger.store(tab="eval", Cost=cost, Reward=ret, Success=success_rate, Length=length)
+            results = trainer.evaluate(args.eval_episodes)
+            cost = results["cost"]
+            ret = results["reward"]
+            length = results["ep_len"]
+            success_rate = results["success"]
+            oor_rate = results["oor"]
+            crash_rate = results["crash"]
+            max_time = results["max_time"]
+            logger.store(tab="eval", Cost=cost, Reward=ret, Length=length, \
+                        Success=success_rate, OOR=oor_rate, Crash=crash_rate, Overtime=max_time)
             
             # save the current weight
             logger.save_checkpoint()

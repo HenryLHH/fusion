@@ -13,9 +13,9 @@ from tqdm.auto import trange  # nosuqa
 from utils.logger import WandbLogger
 
 from utils.dataset import TransitionDataset_Baselines
-from ssr.agent.bcql.bcql import BCQL, BCQLTrainer
+from fusion.agent.bcql.bcql import BCQL, BCQLTrainer
 from utils.exp_utils import auto_name, seed_all
-from ssr.configs.bcql_configs import BCQLTrainConfig, BCQL_DEFAULT_CONFIG
+from fusion.configs.bcql_configs import BCQLTrainConfig, BCQL_DEFAULT_CONFIG
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from utils.exp_utils import make_envs, make_envs_single
 
@@ -118,8 +118,16 @@ def train(args: BCQLTrainConfig):
 
         # evaluation
         if (step + 1) % args.eval_every == 0 or step == args.update_steps - 1:
-            ret, cost, length, success_rate = trainer.evaluate(args.eval_episodes)
-            logger.store(tab="eval", Cost=cost, Reward=ret, Length=length, Success=success_rate)
+            results = trainer.evaluate(args.eval_episodes)
+            cost = results["cost"]
+            ret = results["reward"]
+            length = results["ep_len"]
+            success_rate = results["success"]
+            oor_rate = results["oor"]
+            crash_rate = results["crash"]
+            max_time = results["max_time"]
+            logger.store(tab="eval", Cost=cost, Reward=ret, Length=length, \
+                        Success=success_rate, OOR=oor_rate, Crash=crash_rate, Overtime=max_time)
             
             # save the current weight
             logger.save_checkpoint()

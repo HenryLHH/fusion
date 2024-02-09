@@ -7,13 +7,13 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from metadrive.manager.traffic_manager import TrafficMode
 from envs.envs import State_TopDownMetaDriveEnv
 
-from ssr.agent.DT.utils import evaluate_on_env_structure, evaluate_on_env_structure_pred
-from ssr.agent.DT.model import SafeDecisionTransformer_Structure
-from ssr.agent.icil.eval_icil import evaluate_on_env
-from ssr.agent.icil.icil import ICIL
-from ssr.agent.bisim.eval_cnn import evaluate_on_env_cnn
-from ssr.encoder.model_actor import BisimEncoder_Head_BP_Actor
-from ssr.encoder.model_state_est import BisimEncoder_Head_BP_Actor as StatePred
+from fusion.agent.DT.utils import evaluate_on_env_structure, evaluate_on_env_structure_pred
+from fusion.agent.DT.model import SafeDecisionTransformer_Structure
+from fusion.agent.icil.eval_icil import evaluate_on_env
+from fusion.agent.icil.icil import ICIL
+from fusion.agent.bisim.eval_cnn import evaluate_on_env_cnn
+from fusion.encoder.model_actor import BisimEncoder_Head_BP_Actor
+from fusion.encoder.model_state_est import BisimEncoder_Head_BP_Actor as StatePred
 
 
 from utils.utils import CUDA

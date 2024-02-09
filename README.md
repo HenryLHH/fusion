@@ -15,9 +15,9 @@ pip install -e .[all]
 bash run_fusion.sh
 ```
 
+------------
 
 ### Data Availability
 
 Our dataset to train the offline RL is available on this [Google Drive Link](https://drive.google.com/drive/folders/10T-i_SlHRkB5FKLCa1BO4rpZgw-9x3AN?usp=sharing). 
 
-------------

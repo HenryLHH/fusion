@@ -80,6 +80,7 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
             "obs_noise_scale": 0.0,
             "idm_target_speed": 30,
             "idm_acc_factor": 1.0,
+            "idm_deacc_factor": -5.0, 
         })
         return config
     

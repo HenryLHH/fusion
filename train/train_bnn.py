@@ -9,10 +9,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
 
-from ssr.agent.icil.icil_state import ICIL as ICIL_state
-from ssr.agent.icil.icil import ICIL as ICIL_img
-from ssr.agent.bnn.eval_utils import evaluate_on_env
-from ssr.agent.bnn.bnn import BNN_Agent
+from fusion.agent.icil.icil_state import ICIL as ICIL_state
+from fusion.agent.icil.icil import ICIL as ICIL_img
+from fusion.agent.bnn.eval_utils import evaluate_on_env
+from fusion.agent.bnn.bnn import BNN_Agent
 
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from utils.dataset import BisimDataset_Fusion_Spurious, TransitionDataset_Baselines

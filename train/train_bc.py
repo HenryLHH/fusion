@@ -9,76 +9,21 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 
 
-from ssr.agent.icil.icil_state import ICIL as ICIL_state
-from ssr.agent.icil.icil import ICIL as ICIL_img
-from ssr.agent.DAgger.eval_utils import evaluate_on_env
-from ssr.agent.DAgger.bc_model import BC_Agent
+from fusion.agent.icil.icil_state import ICIL as ICIL_state
+from fusion.agent.icil.icil import ICIL as ICIL_img
+from fusion.agent.bc.eval_utils import evaluate_on_env
+from fusion.agent.bc.bc_model import BC_Agent
 
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from utils.dataset import BisimDataset_Fusion_Spurious, TransitionDataset_Baselines
-# from utils.exp_utils import make_envs
 from metadrive.manager.traffic_manager import TrafficMode
 from envs.envs import State_TopDownMetaDriveEnv
 
-
-def make_envs(): 
-    config = dict(
-        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
-        start_seed=0, #tune.grid_search([0, 1000]),
-        frame_stack=3, # TODO: debug
-        safe_rl_env=True,
-        random_traffic=False,
-        accident_prob=0,
-        distance=20,
-        vehicle_config=dict(lidar=dict(
-            num_lasers=240,
-            distance=50,
-            num_others=4
-        )),
-        map_config=dict(type="block_sequence", config="TRO"), 
-        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
-        traffic_mode=TrafficMode.Trigger,
-        horizon=args.horizon-1,
-    )
-    return State_TopDownMetaDriveEnv(config)
-
-block_list=["S", "T", "R", "O"]
-
-def make_envs_single(block_id=0): 
-    idx = int(block_id // 4)
-    block_type=block_list[idx]
-    config = dict(
-        environment_num=10, # tune.grid_search([1, 5, 10, 20, 50, 100, 300, 1000]),
-        start_seed=0, #tune.grid_search([0, 1000]),
-        frame_stack=3, # TODO: debug
-        safe_rl_env=True,
-        random_traffic=False,
-        accident_prob=0,
-        distance=20,
-        vehicle_config=dict(lidar=dict(
-            num_lasers=240,
-            distance=50,
-            num_others=4
-        )),
-        map_config=dict(type="block_sequence", config=block_type), 
-        traffic_density=0.2, #tune.grid_search([0.05, 0.2]),
-        traffic_mode=TrafficMode.Hybrid,
-        horizon=args.horizon-1,
-    )
-    return State_TopDownMetaDriveEnv(config)
-
-
+from utils.train_utils import CPU, CUDA, make_envs, make_envs_single
 
 
 OBS_DIM = 35
 NUM_FILES = 398000
-def CPU(x):
-    return x.detach().cpu().numpy()
-
-def CUDA(x):
-    if isinstance(x, np.ndarray):
-        x = torch.from_numpy(x)
-    return x.cuda()
 
 def reparameterize(mu, std):
     # std = torch.exp(logstd)
@@ -121,11 +66,11 @@ if __name__ == '__main__':
     args = get_train_parser().parse_args()
     
     if args.single_env: 
-        env = SubprocVecEnv([lambda: make_envs_single(i) for i in range(16)], start_method="spawn")    
+        env = SubprocVecEnv([lambda: make_envs_single(args, i) for i in range(16)], start_method="spawn")    
     else: 
-        env = SubprocVecEnv([make_envs for _ in range(16)], start_method="spawn")
+        env = SubprocVecEnv([lambda: make_envs_single(args) for _ in range(16)], start_method="spawn")
     
-
+    
     os.makedirs("log/", exist_ok=True)
     os.makedirs("checkpoint/", exist_ok=True)
     # os.makedirs(os.path.join("log/", args.model), exist_ok=True)

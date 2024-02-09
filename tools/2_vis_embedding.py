@@ -3,8 +3,8 @@ import argparse
 
 from envs.envs import State_TopDownMetaDriveEnv
 
-from ssr.agent.DT.utils import evaluate_on_env_structure
-from ssr.agent.DT.model import SafeDecisionTransformer_Structure
+from fusion.agent.DT.utils import evaluate_on_env_structure
+from fusion.agent.DT.model import SafeDecisionTransformer_Structure
 from utils.utils import CUDA
 
 from sklearn.manifold import TSNE
