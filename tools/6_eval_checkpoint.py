@@ -7,13 +7,11 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from metadrive.manager.traffic_manager import TrafficMode
 from envs.envs import State_TopDownMetaDriveEnv
 
-from fusion.agent.DT.utils import evaluate_on_env_structure, evaluate_expert, evaluate_on_env_structure_pred, evaluate_on_env_nocost
-from fusion.agent.DT.model import DecisionTransformer, SafeDecisionTransformer_Structure
+from fusion.agent.fusion.evals import evaluate_on_env_structure, evaluate_expert, evaluate_on_env_structure_pred, evaluate_on_env_nocost
+from fusion.agent.fusion.model import DecisionTransformer, Fusion_Structure
 
 from fusion.agent.icil.eval_icil import evaluate_on_env as eval_icil
 from fusion.agent.icil.icil_state import ICIL
-
-from fusion.agent.bisim.eval_cnn import evaluate_on_env_cnn
 
 from fusion.agent.bnn.bnn import BNN_Agent
 from fusion.agent.bnn.eval_utils import evaluate_on_env as eval_bnn
@@ -21,8 +19,6 @@ from fusion.agent.bnn.eval_utils import evaluate_on_env as eval_bnn
 from fusion.agent.gsa.gsa import GSA_Agent
 from fusion.agent.gsa.eval_utils import evaluate_on_env as eval_gsa
 
-from fusion.agent.DAgger.bc_model import BC_Agent
-from fusion.agent.DAgger.eval_utils import evaluate_on_env as eval_bc
 
 from fusion.agent.bearl.bearl import BEARL
 from fusion.configs.bearl_configs import BEARLTrainConfig, BEARL_DEFAULT_CONFIG
@@ -31,10 +27,8 @@ from fusion.configs.bcql_configs import BCQL_DEFAULT_CONFIG
 from fusion.agent.cpq.cpq import CPQ
 from fusion.configs.cpq_configs import CPQ_DEFAULT_CONFIG
 
-from utils.exp_utils import evaluate_rollouts
+# from utils.exp_utils import evaluate_rollouts
 
-from fusion.encoder.model_actor import BisimEncoder_Head_BP_Actor
-from fusion.encoder.model_state_est import BisimEncoder_Head_BP_Actor as StatePred
 from fusion.agent.expert.idm_custom import IDMPolicy_CustomSpeed
 
 
@@ -153,16 +147,16 @@ def get_train_parser():
 if __name__ == '__main__':
     args = get_train_parser().parse_args()
     eval_avg_reward, eval_avg_succ, eval_avg_cost, eval_avg_crash, eval_avg_max_step, eval_avg_oor, eval_avg_over_speed = [], [], [], [], [], [], []
-    model_est = CUDA(StatePred(hidden_dim=64, output_dim=35, causal=args.causal))
-    if args.causal: 
-        model_est.load_state_dict(torch.load('./state_est_causal.pt'))
-    else: 
-        model_est.load_state_dict(torch.load('./state_est.pt'))
+    # model_est = CUDA(StatePred(hidden_dim=64, output_dim=35, causal=args.causal))
+    # if args.causal: 
+    #     model_est.load_state_dict(torch.load('./state_est_causal.pt'))
+    # else: 
+    #     model_est.load_state_dict(torch.load('./state_est.pt'))
     
     if args.method == 'expert': 
         pass
     elif args.method == 'ssr': 
-        model = CUDA(SafeDecisionTransformer_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=args.context, n_heads=1, drop_p=0.1, max_timestep=args.horizon))
+        model = CUDA(Fusion_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=args.hidden, context_len=args.context, n_heads=1, drop_p=0.1, max_timestep=args.horizon))
         model.load_state_dict(torch.load(os.path.join('checkpoint/', args.model, 'best.pt')))
         print(model)
     elif args.method == 'ssr_nc': 

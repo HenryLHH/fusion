@@ -199,7 +199,7 @@ class State_TopDownMetaDriveEnv(TopDownMetaDrive):
         # cost_continuous = max(0, np.exp(max(0, 0.4-lidar_dist))-np.exp(max(0, 0.4-self.last_dist)))
         cost_continuous = max(0, 0.5-lidar_dist)**2
         i['proximity_cost'] = 1e-1*max(0, 0.4-lidar_dist)**2
-        i["velocity_cost"] = max(0, 1e-2*(i["velocity"]-15.))
+        i["velocity_cost"] = max(0, 1e-2*(i["velocity"]-20.))
         # print("v: ", i['velocity'])
         i['cost'] = i['cost_sparse'] + i['velocity_cost']
         self.last_dist = lidar_dist

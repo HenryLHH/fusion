@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 def get_install_requires() -> str:
     return [
-        'gym>=0.21.0',
+        'gym==0.21.0',
         'numpy',
     ]
     

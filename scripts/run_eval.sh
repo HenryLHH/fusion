@@ -53,3 +53,5 @@
 #         --model "logs/MetaDrive-TopDown-v0-cost-1/CPQ_cost1_datasetdataset_mixed_single_post_single_envTrue-2432/CPQ_cost1_datasetdataset_mixed_single_post_single_envTrue-2432/checkpoint/model_best.pt" \
 #         --horizon 1000 --cost 5.0 --dynamics --value --single_env --ep_num 50 # --generalize
 
+python tools/6_eval_checkpoint.py --method ssr --model context_20_single_safe_dynamics_value --context 20 \
+        --horizon 1000 --cost 5.0  --dynamics --value --single_env --ep_num 50

@@ -5,6 +5,7 @@ attn/
 wandb/
 tools/
 .vscode/
+./data/*
 output/
 fig/
 *.pt

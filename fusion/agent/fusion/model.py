@@ -13,6 +13,7 @@ which is fixed in the following code
 """
 
 import math
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,6 +21,68 @@ import torch.nn.functional as F
 from utils.networks import build_encoder_net
 from utils.utils import CUDA, CPU
 
+def reparameterize(mu, std):
+    # std = torch.exp(logstd)
+    eps = torch.randn_like(std)
+    return mu + eps * std
+
+class Encoder(nn.Module):
+    def __init__(self, hidden_dim, nc, output_dim):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.nc = nc
+        
+        self.encoder = build_encoder_net(hidden_dim*nc, nc)
+        self.fc_out = nn.Linear(hidden_dim*nc, output_dim*2)
+        # self.ln = nn.LayerNorm(OBS_DIM)
+
+    def forward(self, x): 
+
+        z_tmp = self.encoder(x)
+        mu, std = z_tmp[:, :self.hidden_dim*self.nc], z_tmp[:, self.hidden_dim*self.nc:]
+        z_tmp = reparameterize(mu, std)
+        
+        output = self.fc_out(z_tmp)
+
+        mu, std = output[:, :self.output_dim], output[:, self.output_dim:]
+        state_pred = reparameterize(mu, std)
+
+        return state_pred, mu, torch.exp(std)
+    
+class ImageEncoder(nn.Module):
+    def __init__(self, hidden_dim, output_dim) -> None:
+        super().__init__()
+
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.lidar_dim = 240
+        self.action_encoder = Encoder(hidden_dim=hidden_dim, nc=5, output_dim=output_dim)
+        
+        self.criteria = nn.MSELoss(reduction='mean')        
+        
+        # self.opt_actor = optim.Adam(self.parameters(), lr=1e-4, betas=(0.9, 0.999))
+        # self.opt_critic = optim.Adam(self.parameters(), lr=1e-4, betas=(0.9, 0.999))
+        self.sigma_min = 1e-2
+        self.sigma_max = 1.
+    
+    def forward(self, img, state, deterministic=False):
+        '''
+            Get the cost-aware Bisimulation Loss for the representation
+        '''
+        if not deterministic: 
+            state_pred, _, _ = self.action_encoder(img)
+        else:
+            _, state_pred, _ = self.action_encoder(img)
+
+        loss_state = self.criteria(state_pred, state)
+        
+        return state_pred, loss_state
+    
+    @torch.no_grad()
+    def encode(self, img): 
+        return self.action_encoder(img)[1]
+    
 class MaskedCausalAttention(nn.Module):
     def __init__(self, h_dim, max_T, n_heads, drop_p):
         super().__init__()
@@ -251,7 +314,7 @@ class Fusion(nn.Module):
 
 class Fusion_Structure(nn.Module):
     def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len,
-                 n_heads, drop_p, max_timestep=4096):
+                 n_heads, drop_p, h_dim_pretrained=64, max_timestep=4096):
         super().__init__()
 
         self.state_dim = state_dim
@@ -269,13 +332,18 @@ class Fusion_Structure(nn.Module):
         self.embed_timestep = nn.Embedding(max_timestep, h_dim)
         self.embed_rtg = torch.nn.Linear(1, h_dim)
         self.embed_ctg = torch.nn.Linear(1, h_dim)
-        self.embed_lidar = nn.Sequential(*[nn.Linear(self.lidar_dim, h_dim), 
-                                           nn.GELU(),
-                                           nn.Linear(h_dim, h_dim)])
+        self.embed_lidar = nn.Linear(self.lidar_dim, h_dim)
+        self.embed_agg = nn.Sequential(*[nn.Linear(h_dim*3, h_dim),
+                                        nn.ReLU(),
+                                        nn.Linear(h_dim, h_dim)])
         
-                
+        self.embed_img = CUDA(ImageEncoder(hidden_dim=h_dim_pretrained, output_dim=state_dim))
+        self.embed_img.load_state_dict(torch.load('checkpoint/state_est.pt'))
+        for v in self.embed_img.parameters():
+            v.requires_grad = False
+            
         self.embed_state = torch.nn.Linear(state_dim, h_dim)
-
+        
         # continuous actions
         self.embed_action = torch.nn.Linear(act_dim, h_dim)
         use_action_tanh = True # True for continuous actions
@@ -291,50 +359,50 @@ class Fusion_Structure(nn.Module):
 
 
     def forward(self, timesteps, states, actions, returns_to_go, returns_to_go_cost, deterministic=False):
-        state, lidar, img = states        
+        state, lidar, img = states  
         B, T, _ = state.shape
         if state.isnan().any(): 
             state = torch.nan_to_num(state, nan=0.0)
-            print('replace nan values...')
+            print('replace nan values.')
         
         time_embeddings = self.embed_timestep(timesteps)
-        # time embeddings are treated similar to positional embeddings
-        try: 
-            state_embeddings = self.embed_state(state) + time_embeddings
-        except: 
-            print(state.shape, time_embeddings.shape)
-            print('error')
+        # # time embeddings are treated similar to positional embeddings
+        ego_embeddings = self.embed_state(state)        
+        lidar_embeddings = self.embed_lidar(lidar)      
+        # bev embedding will be replaced by the image encoder at the inference time  
+        if deterministic: 
+            img = img.reshape(-1, 5, 84, 84)
+            bev_embeddings = self.embed_img.encode(img)
+            bev_embeddings = bev_embeddings.reshape(B, T, -1)
+            bev_embeddings = self.embed_state(bev_embeddings)
+        else: 
+            bev_embeddings = ego_embeddings.clone()
+            
+        state_embeddings = self.embed_agg(torch.cat([ego_embeddings, lidar_embeddings, bev_embeddings], dim=2)) + time_embeddings
         
         action_embeddings = self.embed_action(actions) + time_embeddings
         returns_embeddings = self.embed_rtg(returns_to_go) + time_embeddings
         returns_embeddings_cost = self.embed_ctg(returns_to_go_cost) + time_embeddings
-        
+         
         # stack rtg, states and actions and reshape sequence as
         # (c_0, r_0, s_0, a_0, c_1, r_1, s_1, a_1, c_2, r_2, s_2, a_2 ...)
         h = torch.stack(
             (returns_embeddings_cost, returns_embeddings, state_embeddings, action_embeddings), dim=1
         ).permute(0, 2, 1, 3).reshape(B, 4 * T, self.h_dim)
         
-        print(returns_to_go_cost.shape)
+        # print(returns_to_go_cost.shape)
         torch.save(returns_to_go_cost, 'cost.pt')
         h = self.embed_ln(h)
-        print(h.shape)
+        # print(h.shape)
         # transformer and prediction
         h = self.transformer(h)
         
-        # get h reshaped such that its size = (B x 4 x T x h_dim) and
-        # h[:, 0, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t
-        # h[:, 1, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t
-        # h[:, 2, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t
-        # h[:, 3, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t
-        # h[:, 4, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t, state_t
-        # h[:, 5, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t, state_t, a_t
+        # get h reshaped such that its size = (B x 4 x T x h_dim)
         # that is, for each timestep (t) we have 3 output embeddings from the transformer,
         # each conditioned on all previous timesteps plus 
-        # the 3 input variables at that timestep (r_t, s_t, a_t) in sequence.
         h = h.reshape(B, T, 4, self.h_dim).permute(0, 2, 1, 3)
-        
-        # get predictions
+
+        # get predictions conditioned on the attended "causal parents"
         return_cost_preds = self.predict_ctg(h[:,3])     # predict next rtg given c, r, s, a
         return_preds = self.predict_rtg(h[:,3])     # predict next rtg given c, r, s, a
         state_preds = self.predict_state(h[:,3])    # predict next state given c, r, s, a
@@ -343,181 +411,9 @@ class Fusion_Structure(nn.Module):
         return state_preds, action_preds, return_preds, return_cost_preds
 
 
-class Fusion_StructureAgg(nn.Module):
-    def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len,
-                 n_heads, drop_p, max_timestep=4096):
-        super().__init__()
-
-        self.state_dim = state_dim
-        self.lidar_dim = 240
-        self.act_dim = act_dim
-        self.h_dim = h_dim
-
-        ### transformer blocks
-        input_seq_len = 4 * context_len
-        blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
-        self.transformer = nn.Sequential(*blocks)
-
-        ### projection heads (project to embedding)
-        self.embed_ln = nn.LayerNorm(h_dim)
-        self.embed_timestep = nn.Embedding(max_timestep, h_dim)
-        self.embed_rtg = torch.nn.Linear(1, h_dim)
-        self.embed_ctg = torch.nn.Linear(1, h_dim)
-        
-        print('Image Encoder Freezed')
-        
-        self.embed_state = nn.Sequential(nn.Linear(state_dim+240, h_dim), 
-                                         nn.GELU(), 
-                                         nn.Linear(h_dim, h_dim))
-
-        # continuous actions
-        self.embed_action = torch.nn.Linear(act_dim, h_dim)
-        use_action_tanh = True # True for continuous actions
-
-        ### prediction heads
-        self.predict_rtg = torch.nn.Linear(h_dim, 1)
-        self.predict_ctg = torch.nn.Linear(h_dim, 1)
-        
-        self.predict_state = torch.nn.Linear(h_dim, state_dim)
-        self.predict_action = nn.Sequential(
-            *([nn.Linear(h_dim, act_dim)] + ([nn.Tanh()] if use_action_tanh else []))
-        )
-
-
-    def forward(self, timesteps, states, actions, returns_to_go, returns_to_go_cost):
-        state, lidar, img = states        
-        B, T, _ = state.shape
-
-        state_agg = torch.cat([state, lidar], dim=2)
-        time_embeddings = self.embed_timestep(timesteps)
-        
-        # print(self.embed_action.parameters(), actions)
-        # time embeddings are treated similar to positional embeddings
-        state_embeddings = self.embed_state(state_agg) + time_embeddings
-        action_embeddings = self.embed_action(actions) + time_embeddings
-        returns_embeddings = self.embed_rtg(returns_to_go) + time_embeddings
-        returns_embeddings_cost = self.embed_ctg(returns_to_go_cost) + time_embeddings
-        
-        # stack rtg, states and actions and reshape sequence as
-        # (r_0, s_0, a_0, r_1, s_1, a_1, r_2, s_2, a_2 ...)
-        h = torch.stack(
-            (returns_embeddings_cost, returns_embeddings, state_embeddings, action_embeddings), dim=1
-        ).permute(0, 2, 1, 3).reshape(B, 4 * T, self.h_dim)
-
-        h = self.embed_ln(h)
-
-        # transformer and prediction
-        h = self.transformer(h)
-
-        # get h reshaped such that its size = (B x 4 x T x h_dim) and
-        # h[:, 0, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t
-        # h[:, 1, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t
-        # h[:, 2, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t
-        # h[:, 3, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t
-        # h[:, 4, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t, state_t
-        # h[:, 5, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t, state_t, a_t
-        # that is, for each timestep (t) we have 3 output embeddings from the transformer,
-        # each conditioned on all previous timesteps plus 
-        # the 3 input variables at that timestep (r_t, s_t, a_t) in sequence.
-        h = h.reshape(B, T, 5, self.h_dim).permute(0, 2, 1, 3)
-        
-        # get predictions
-        return_cost_preds = self.predict_ctg(h[:,4])     # predict next rtg given c, r, s, a
-        return_preds = self.predict_rtg(h[:,4])     # predict next rtg given c, r, s, a
-        state_preds = self.predict_state(h[:,4])    # predict next state given c, r, s, a
-        action_preds = self.predict_action(h[:,3])  # predict action given c, r, s
-
-        return state_preds, action_preds, return_preds, return_cost_preds
-
-
-class Fusion_Structure_Dynamics(nn.Module):
-    def __init__(self, state_dim, act_dim, n_blocks, h_dim, context_len,
-                 n_heads, drop_p, max_timestep=4096):
-        super().__init__()
-
-        self.state_dim = state_dim
-        self.lidar_dim = 240
-        self.act_dim = act_dim
-        self.h_dim = h_dim
-
-        ### transformer blocks
-        input_seq_len = 3 * context_len
-        blocks = [Block(h_dim, input_seq_len, n_heads, drop_p) for _ in range(n_blocks)]
-        self.transformer = nn.Sequential(*blocks)
-        
-        ### projection heads (project to embedding)
-        self.embed_ln = nn.LayerNorm(h_dim)
-        self.embed_timestep = nn.Embedding(max_timestep, h_dim)
-        self.embed_rtg = torch.nn.Linear(1, h_dim)
-        self.embed_ctg = torch.nn.Linear(1, h_dim)
-        self.embed_lidar = nn.Sequential(*[nn.Linear(self.lidar_dim, h_dim), 
-                                           nn.GELU(),
-                                           nn.Linear(h_dim, h_dim)])
-        
-        print('Image Encoder Freezed')
-        
-        self.embed_state = torch.nn.Linear(state_dim, h_dim)
-
-        # continuous actions
-        self.embed_action = torch.nn.Linear(act_dim, h_dim)
-        use_action_tanh = True # True for continuous actions
-
-        ### prediction heads
-        
-        self.predict_state = torch.nn.Linear(h_dim, state_dim)
-        self.predict_state_lidar = torch.nn.Linear(h_dim, self.lidar_dim)
-        self.predict_action = nn.Sequential(
-            *([nn.Linear(h_dim, act_dim)] + ([nn.Tanh()] if use_action_tanh else []))
-        )
-
-
-
-    def forward(self, timesteps, states, actions, returns_to_go, returns_to_go_cost, deterministic=False):
-        state, lidar, img = states        
-        B, T, _ = state.shape
-
-        time_embeddings = self.embed_timestep(timesteps)
-        
-        # print(self.embed_action.parameters(), actions)
-        # time embeddings are treated similar to positional embeddings
-        state_embeddings = self.embed_state(state) + time_embeddings
-        action_embeddings = self.embed_action(actions) + time_embeddings
-        state_embeddings_lidar = self.embed_lidar(lidar) + time_embeddings
-        
-        
-        # stack rtg, states and actions and reshape sequence as
-        # (r_0, s_0, a_0, r_1, s_1, a_1, r_2, s_2, a_2 ...)
-        h = torch.stack(
-            (state_embeddings, state_embeddings_lidar, action_embeddings), dim=1
-        ).permute(0, 2, 1, 3).reshape(B, 3 * T, self.h_dim)
-
-        h = self.embed_ln(h)
-
-        # transformer and prediction
-        h = self.transformer(h)
-        
-        # get h reshaped such that its size = (B x 4 x T x h_dim) and
-        # h[:, 0, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t
-        # h[:, 1, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t
-        # h[:, 2, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t
-        # h[:, 3, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t
-        # h[:, 4, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t, state_t
-        # h[:, 5, t] is conditioned on the input sequence c_0, r_0, s_0, a_0 ... c_t, r_t, img_t, lidar_t, state_t, a_t
-        # that is, for each timestep (t) we have 3 output embeddings from the transformer,
-        # each conditioned on all previous timesteps plus 
-        # the 3 input variables at that timestep (r_t, s_t, a_t) in sequence.
-        h = h.reshape(B, T, 3, self.h_dim).permute(0, 2, 1, 3)
-        
-        # get predictions
-        state_preds = self.predict_state(h[:,2])    # predict next state given s, s_lidar, a        
-        state_preds_lidar = self.predict_state_lidar(h[:,2])    # predict next state given s, s_lidar, a        
-
-        return state_preds, state_preds_lidar
-
-
 if __name__ == '__main__': 
     #### Toy Example
-    model = DecisionTransformer(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=8, drop_p=0.1, max_timestep=1000)
+    model = Fusion_Structure(state_dim=35, act_dim=2, n_blocks=3, h_dim=64, context_len=30, n_heads=8, drop_p=0.1, max_timestep=1000)
     timestep = torch.randint(0, 1, (128, 1))
     rtg = torch.rand(128, 30, 1)
     state = torch.rand(128, 30, 35)
