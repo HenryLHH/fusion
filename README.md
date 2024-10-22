@@ -2,6 +2,7 @@
 
 #### [[Project Page]](https://sites.google.com/view/safe-fusion/) [[RAL Paper]](https://ieeexplore.ieee.org/document/10476686) [[Arxiv Preprint]](https://arxiv.org/pdf/2311.10747) [[Dataset]](https://drive.google.com/drive/folders/10T-i_SlHRkB5FKLCa1BO4rpZgw-9x3AN) [[Video]](https://drive.google.com/file/d/1lV1NWw0D1nH1-KjX1RqH4kDcaFSIJM1i/view)
 
+![[Diagram Preview]](fusion/diagram.jpg)
 
 ### 🔍 Structure
 The core structure of this repo is as follows:

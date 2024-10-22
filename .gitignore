@@ -10,7 +10,7 @@ output/
 fig/
 *.pt
 *.png
-*.jpg
+# *.jpg
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
