@@ -1,9 +1,9 @@
 # !/bin/bash
-python train/train_fusion.py --rtg_scale 300.0 --ctg_scale 40.0 \
+python train/train_fusion.py --rtg_scale 300.0 --ctg_scale 10.0 \
     --dataset data_default --model fusion --context 20 \
     --num_workers 4 --num_envs 1 --single_env --dynamics --value
 
-python train/train_icil.py --mode train --model icil_state_small_portion \
+python train/train_icil.py --mode train --model icil_state \
         --dataset dataset_mixed_post
 
 python train/train_gsa.py --mode train --model gsa_single_safe \
