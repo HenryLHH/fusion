@@ -38,7 +38,7 @@ git clone https://github.com/HenryLHH/fusion
 
 # install fusion package in the virtual env
 cd fusion
-conda create -n fusion
+conda create -n fusion python=3.8
 conda activate fusion
 pip install -e .[all]
 ```
